@@ -1,0 +1,194 @@
+const BUILT_IN_TEMPLATES = [
+  {
+    id: 'tpl_newsletter',
+    name: 'Monthly Newsletter',
+    category: 'Newsletter',
+    subject: "{{month}} Newsletter — What's New",
+    html_body: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;width:100%;">
+        <tr><td style="background:#1a1a2e;padding:32px 40px;text-align:center;">
+          <h1 style="color:#ffffff;margin:0;font-size:24px;font-weight:600;">{{company_name}}</h1>
+          <p style="color:#a0a0c0;margin:8px 0 0;font-size:14px;">Monthly Newsletter</p>
+        </td></tr>
+        <tr><td style="padding:40px;">
+          <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 16px;">Hi {{first_name}},</h2>
+          <p style="color:#4a4a6a;line-height:1.7;margin:0 0 24px;">{{intro_text}}</p>
+          <hr style="border:none;border-top:1px solid #e8e8f0;margin:24px 0;">
+          <h3 style="color:#1a1a2e;font-size:16px;margin:0 0 12px;">This month's highlights</h3>
+          <p style="color:#4a4a6a;line-height:1.7;margin:0 0 24px;">{{highlights}}</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center" style="padding:24px 0;">
+              <a href="{{cta_url}}" style="background:#6366f1;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">{{cta_text}}</a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f4f4f5;padding:24px 40px;text-align:center;">
+          <p style="color:#9090a0;font-size:12px;margin:0;">© {{year}} {{company_name}}. All rights reserved.</p>
+          <p style="color:#9090a0;font-size:12px;margin:8px 0 0;"><a href="{{unsubscribe_url}}" style="color:#9090a0;">Unsubscribe</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  },
+  {
+    id: 'tpl_product_launch',
+    name: 'Product Launch',
+    category: 'Marketing',
+    subject: 'Introducing {{product_name}} — Available Now',
+    html_body: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#0f0f1a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#1a1a2e;border-radius:12px;overflow:hidden;max-width:600px;width:100%;">
+        <tr><td style="padding:48px 40px;text-align:center;">
+          <p style="color:#6366f1;font-size:13px;font-weight:600;letter-spacing:2px;margin:0 0 16px;text-transform:uppercase;">New Launch</p>
+          <h1 style="color:#ffffff;font-size:36px;margin:0 0 16px;font-weight:700;line-height:1.2;">{{product_name}}</h1>
+          <p style="color:#a0a0c0;font-size:16px;line-height:1.7;margin:0 0 32px;">{{product_tagline}}</p>
+          <a href="{{cta_url}}" style="background:#6366f1;color:#ffffff;text-decoration:none;padding:16px 40px;border-radius:8px;font-size:16px;font-weight:600;display:inline-block;">Get Early Access</a>
+        </td></tr>
+        <tr><td style="padding:40px;border-top:1px solid #2a2a4a;">
+          <h3 style="color:#ffffff;font-size:18px;margin:0 0 20px;">Why {{product_name}}?</h3>
+          <p style="color:#a0a0c0;line-height:1.7;margin:0 0 20px;">{{product_description}}</p>
+        </td></tr>
+        <tr><td style="padding:24px 40px;text-align:center;border-top:1px solid #2a2a4a;">
+          <p style="color:#606080;font-size:12px;margin:0;">© {{year}} {{company_name}} · <a href="{{unsubscribe_url}}" style="color:#606080;">Unsubscribe</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  },
+  {
+    id: 'tpl_welcome',
+    name: 'Welcome Email',
+    category: 'Onboarding',
+    subject: 'Welcome to {{company_name}}, {{first_name}}!',
+    html_body: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8f8fc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;width:100%;border:1px solid #e8e8f0;">
+        <tr><td style="padding:48px 40px;text-align:center;">
+          <h1 style="color:#1a1a2e;font-size:28px;margin:0 0 12px;font-weight:700;">Welcome aboard, {{first_name}}!</h1>
+          <p style="color:#6060a0;font-size:16px;line-height:1.7;margin:0;">You've just joined {{company_name}}. We're thrilled to have you.</p>
+        </td></tr>
+        <tr><td style="padding:0 40px 40px;">
+          <p style="color:#4a4a6a;line-height:1.7;margin:0 0 24px;">{{welcome_message}}</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center">
+              <a href="{{cta_url}}" style="background:#6366f1;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">{{cta_text}}</a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f8f8fc;padding:24px 40px;text-align:center;border-top:1px solid #e8e8f0;">
+          <p style="color:#9090a0;font-size:12px;margin:0;">© {{year}} {{company_name}} · <a href="{{unsubscribe_url}}" style="color:#9090a0;">Unsubscribe</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  },
+  {
+    id: 'tpl_promo',
+    name: 'Promotional / Sale',
+    category: 'Marketing',
+    subject: '{{discount}}% Off — Today Only',
+    html_body: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#fff5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;width:100%;">
+        <tr><td style="background:#dc2626;padding:48px 40px;text-align:center;">
+          <p style="color:#fecaca;font-size:13px;font-weight:600;letter-spacing:2px;margin:0 0 12px;text-transform:uppercase;">Limited Time Offer</p>
+          <h1 style="color:#ffffff;font-size:64px;margin:0;font-weight:800;line-height:1;">{{discount}}%</h1>
+          <h2 style="color:#ffffff;font-size:24px;margin:8px 0 16px;font-weight:600;">OFF EVERYTHING</h2>
+          <p style="color:#fecaca;font-size:15px;margin:0;">Use code: <strong style="color:#ffffff;background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:4px;">{{promo_code}}</strong></p>
+        </td></tr>
+        <tr><td style="padding:40px;text-align:center;">
+          <p style="color:#4a4a6a;font-size:16px;line-height:1.7;margin:0 0 32px;">Hi {{first_name}}, {{promo_message}}</p>
+          <a href="{{cta_url}}" style="background:#dc2626;color:#ffffff;text-decoration:none;padding:16px 48px;border-radius:8px;font-size:16px;font-weight:700;display:inline-block;">Shop Now</a>
+        </td></tr>
+        <tr><td style="background:#f8f8fc;padding:24px 40px;text-align:center;border-top:1px solid #e8e8f0;">
+          <p style="color:#9090a0;font-size:12px;margin:0;">© {{year}} {{company_name}} · <a href="{{unsubscribe_url}}" style="color:#9090a0;">Unsubscribe</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  },
+  {
+    id: 'tpl_event',
+    name: 'Event Invitation',
+    category: 'Events',
+    subject: "You're Invited: {{event_name}}",
+    html_body: `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f0fdf4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:600px;width:100%;border:1px solid #d1fae5;">
+        <tr><td style="background:#065f46;padding:40px;text-align:center;">
+          <p style="color:#6ee7b7;font-size:13px;font-weight:600;letter-spacing:2px;margin:0 0 12px;text-transform:uppercase;">You're Invited</p>
+          <h1 style="color:#ffffff;font-size:28px;margin:0;font-weight:700;line-height:1.3;">{{event_name}}</h1>
+        </td></tr>
+        <tr><td style="padding:40px;">
+          <p style="color:#4a4a6a;font-size:16px;line-height:1.7;margin:0 0 24px;">Dear {{first_name}},</p>
+          <p style="color:#4a4a6a;line-height:1.7;margin:0 0 32px;">{{event_description}}</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border-radius:8px;margin-bottom:32px;">
+            <tr><td style="padding:16px 20px;border-bottom:1px solid #d1fae5;">
+              <span style="color:#065f46;font-size:13px;font-weight:600;">Date:</span>
+              <span style="color:#1a1a2e;float:right;">{{event_date}}</span>
+            </td></tr>
+            <tr><td style="padding:16px 20px;border-bottom:1px solid #d1fae5;">
+              <span style="color:#065f46;font-size:13px;font-weight:600;">Time:</span>
+              <span style="color:#1a1a2e;float:right;">{{event_time}}</span>
+            </td></tr>
+            <tr><td style="padding:16px 20px;">
+              <span style="color:#065f46;font-size:13px;font-weight:600;">Location:</span>
+              <span style="color:#1a1a2e;float:right;">{{event_location}}</span>
+            </td></tr>
+          </table>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td align="center">
+              <a href="{{rsvp_url}}" style="background:#059669;color:#ffffff;text-decoration:none;padding:14px 40px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">RSVP Now</a>
+            </td></tr>
+          </table>
+        </td></tr>
+        <tr><td style="background:#f0fdf4;padding:24px 40px;text-align:center;border-top:1px solid #d1fae5;">
+          <p style="color:#9090a0;font-size:12px;margin:0;">© {{year}} {{company_name}} · <a href="{{unsubscribe_url}}" style="color:#9090a0;">Unsubscribe</a></p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+  }
+];
+
+function seedTemplates(db) {
+  const existing = db.prepare('SELECT COUNT(*) as c FROM templates').get();
+  if (existing.c > 0) return;
+  const insert = db.prepare('INSERT OR IGNORE INTO templates (id, name, category, subject, html_body) VALUES (?, ?, ?, ?, ?)');
+  for (const t of BUILT_IN_TEMPLATES) {
+    insert.run(t.id, t.name, t.category, t.subject, t.html_body);
+  }
+}
+
+module.exports = { seedTemplates };
