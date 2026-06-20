@@ -4,27 +4,30 @@ const db = require('../db');
 
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
-router.get('/open/:campaignId/:recipientId', (req, res) => {
+router.get('/open/:campaignId/:recipientId', async (req, res) => {
   const { campaignId, recipientId } = req.params;
   try {
-    const r = db.prepare('SELECT opened FROM recipients WHERE id = ? AND campaign_id = ?').get(recipientId, campaignId);
+    const { data: r } = await db.from('recipients').select('opened').eq('id', recipientId).eq('campaign_id', campaignId).single();
     if (r && !r.opened) {
-      db.prepare('UPDATE recipients SET opened = 1, open_at = CURRENT_TIMESTAMP WHERE id = ?').run(recipientId);
-      db.prepare('UPDATE campaigns SET open_count = open_count + 1 WHERE id = ?').run(campaignId);
+      await db.from('recipients').update({ opened: true, open_at: new Date().toISOString() }).eq('id', recipientId);
+      await db.from('campaigns').update({ open_count: db.rpc('increment', { x: 1 }) }).eq('id', campaignId);
+      const { data: c } = await db.from('campaigns').select('open_count').eq('id', campaignId).single();
+      await db.from('campaigns').update({ open_count: (c?.open_count || 0) + 1 }).eq('id', campaignId);
     }
   } catch (_) {}
-  res.set({ 'Content-Type': 'image/gif', 'Cache-Control': 'no-store, no-cache, must-revalidate' });
+  res.set({ 'Content-Type': 'image/gif', 'Cache-Control': 'no-store' });
   res.send(PIXEL);
 });
 
-router.get('/click/:campaignId/:recipientId', (req, res) => {
+router.get('/click/:campaignId/:recipientId', async (req, res) => {
   const { campaignId, recipientId } = req.params;
   const { url } = req.query;
   try {
-    const r = db.prepare('SELECT clicked FROM recipients WHERE id = ? AND campaign_id = ?').get(recipientId, campaignId);
+    const { data: r } = await db.from('recipients').select('clicked').eq('id', recipientId).eq('campaign_id', campaignId).single();
     if (r && !r.clicked) {
-      db.prepare('UPDATE recipients SET clicked = 1, click_at = CURRENT_TIMESTAMP WHERE id = ?').run(recipientId);
-      db.prepare('UPDATE campaigns SET click_count = click_count + 1 WHERE id = ?').run(campaignId);
+      await db.from('recipients').update({ clicked: true, click_at: new Date().toISOString() }).eq('id', recipientId);
+      const { data: c } = await db.from('campaigns').select('click_count').eq('id', campaignId).single();
+      await db.from('campaigns').update({ click_count: (c?.click_count || 0) + 1 }).eq('id', campaignId);
     }
   } catch (_) {}
   if (url) return res.redirect(decodeURIComponent(url));

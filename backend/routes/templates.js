@@ -3,33 +3,36 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
 
-router.get('/', (req, res) => {
-  const templates = db.prepare('SELECT * FROM templates ORDER BY created_at DESC').all();
-  res.json(templates);
+router.get('/', async (req, res) => {
+  const { data, error } = await db.from('templates').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-router.get('/:id', (req, res) => {
-  const t = db.prepare('SELECT * FROM templates WHERE id = ?').get(req.params.id);
-  if (!t) return res.status(404).json({ error: 'Template not found' });
-  res.json(t);
+router.get('/:id', async (req, res) => {
+  const { data, error } = await db.from('templates').select('*').eq('id', req.params.id).single();
+  if (error) return res.status(404).json({ error: 'Not found' });
+  res.json(data);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { name, category, subject, html_body } = req.body;
   if (!name || !subject || !html_body) return res.status(400).json({ error: 'name, subject, html_body required' });
   const id = uuidv4();
-  db.prepare('INSERT INTO templates (id, name, category, subject, html_body) VALUES (?, ?, ?, ?, ?)').run(id, name, category || '', subject, html_body);
-  res.json({ id, name, category, subject, html_body });
+  const { data, error } = await db.from('templates').insert({ id, name, category: category || '', subject, html_body }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { name, category, subject, html_body } = req.body;
-  db.prepare('UPDATE templates SET name=?, category=?, subject=?, html_body=? WHERE id=?').run(name, category, subject, html_body, req.params.id);
+  const { error } = await db.from('templates').update({ name, category, subject, html_body }).eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM templates WHERE id = ?').run(req.params.id);
+router.delete('/:id', async (req, res) => {
+  await db.from('templates').delete().eq('id', req.params.id);
   res.json({ success: true });
 });
 

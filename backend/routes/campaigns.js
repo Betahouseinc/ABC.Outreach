@@ -7,87 +7,84 @@ const db = require('../db');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-router.get('/', (req, res) => {
-  const campaigns = db.prepare('SELECT * FROM campaigns ORDER BY created_at DESC').all();
-  res.json(campaigns);
+router.get('/', async (req, res) => {
+  const { data, error } = await db.from('campaigns').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-router.get('/:id', (req, res) => {
-  const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(req.params.id);
-  if (!campaign) return res.status(404).json({ error: 'Not found' });
-  res.json(campaign);
+router.get('/:id', async (req, res) => {
+  const { data, error } = await db.from('campaigns').select('*').eq('id', req.params.id).single();
+  if (error) return res.status(404).json({ error: 'Not found' });
+  res.json(data);
 });
 
-router.get('/:id/recipients', (req, res) => {
+router.get('/:id/recipients', async (req, res) => {
   const { page = 1, limit = 50, status } = req.query;
-  const offset = (Number(page) - 1) * Number(limit);
-  let rows, total;
-  if (status) {
-    rows = db.prepare('SELECT * FROM recipients WHERE campaign_id = ? AND status = ? ORDER BY rowid LIMIT ? OFFSET ?').all(req.params.id, status, Number(limit), offset);
-    total = db.prepare('SELECT COUNT(*) as c FROM recipients WHERE campaign_id = ? AND status = ?').get(req.params.id, status).c;
-  } else {
-    rows = db.prepare('SELECT * FROM recipients WHERE campaign_id = ? ORDER BY rowid LIMIT ? OFFSET ?').all(req.params.id, Number(limit), offset);
-    total = db.prepare('SELECT COUNT(*) as c FROM recipients WHERE campaign_id = ?').get(req.params.id).c;
-  }
-  res.json({ recipients: rows, total, page: Number(page), limit: Number(limit) });
+  const from = (Number(page) - 1) * Number(limit);
+  const to = from + Number(limit) - 1;
+
+  let query = db.from('recipients').select('*', { count: 'exact' }).eq('campaign_id', req.params.id);
+  if (status) query = query.eq('status', status);
+  query = query.range(from, to);
+
+  const { data, error, count } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ recipients: data, total: count, page: Number(page), limit: Number(limit) });
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { name, subject, from_name, from_email, template_id, html_body } = req.body;
-  if (!name || !subject || !from_name || !from_email || !html_body) {
+  if (!name || !subject || !from_name || !from_email || !html_body)
     return res.status(400).json({ error: 'name, subject, from_name, from_email, html_body required' });
-  }
+
   const id = uuidv4();
-  db.prepare('INSERT INTO campaigns (id, name, subject, from_name, from_email, template_id, html_body) VALUES (?,?,?,?,?,?,?)')
-    .run(id, name, subject, from_name, from_email, template_id || null, html_body);
-  res.json({ id, name, subject, from_name, from_email, status: 'draft' });
+  const { data, error } = await db.from('campaigns').insert({ id, name, subject, from_name, from_email, template_id: template_id || null, html_body }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { name, subject, from_name, from_email, html_body } = req.body;
-  db.prepare('UPDATE campaigns SET name=?, subject=?, from_name=?, from_email=?, html_body=? WHERE id=?')
-    .run(name, subject, from_name, from_email, html_body, req.params.id);
+  const { error } = await db.from('campaigns').update({ name, subject, from_name, from_email, html_body }).eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 
-router.post('/:id/upload-recipients', upload.single('file'), (req, res) => {
+router.post('/:id/upload-recipients', upload.single('file'), async (req, res) => {
   try {
     const campaignId = req.params.id;
-    const campaign = db.prepare('SELECT id FROM campaigns WHERE id = ?').get(campaignId);
+    const { data: campaign } = await db.from('campaigns').select('id').eq('id', campaignId).single();
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    const fileContent = req.file.buffer.toString('utf-8');
-    const records = parse(fileContent, { columns: true, skip_empty_lines: true, trim: true });
+    const records = parse(req.file.buffer.toString('utf-8'), { columns: true, skip_empty_lines: true, trim: true });
     if (!records.length) return res.status(400).json({ error: 'CSV is empty' });
 
-    const cols = Object.keys(records[0]).map(k => k.toLowerCase());
-    const emailColRaw = Object.keys(records[0]).find(k => ['email','email address','e-mail'].includes(k.toLowerCase()));
-    const nameColRaw = Object.keys(records[0]).find(k => ['name','first_name','full_name'].includes(k.toLowerCase()));
-
+    const emailColRaw = Object.keys(records[0]).find(k => ['email', 'email address', 'e-mail'].includes(k.toLowerCase()));
+    const nameColRaw = Object.keys(records[0]).find(k => ['name', 'first_name', 'full_name'].includes(k.toLowerCase()));
     if (!emailColRaw) return res.status(400).json({ error: 'CSV must have an "email" column' });
 
-    const insert = db.prepare('INSERT OR IGNORE INTO recipients (id, campaign_id, email, name) VALUES (?,?,?,?)');
-    let added = 0;
+    const rows = [];
     for (const row of records) {
       const email = (row[emailColRaw] || '').trim();
       const name = nameColRaw ? (row[nameColRaw] || '').trim() : '';
-      if (email && email.includes('@')) {
-        insert.run(uuidv4(), campaignId, email, name);
-        added++;
-      }
+      if (email && email.includes('@')) rows.push({ id: uuidv4(), campaign_id: campaignId, email, name });
     }
 
-    const total = db.prepare('SELECT COUNT(*) as c FROM recipients WHERE campaign_id = ?').get(campaignId).c;
-    db.prepare('UPDATE campaigns SET total_recipients = ? WHERE id = ?').run(total, campaignId);
-    res.json({ added, total });
+    const { error } = await db.from('recipients').upsert(rows, { onConflict: 'id' });
+    if (error) return res.status(500).json({ error: error.message });
+
+    const { count } = await db.from('recipients').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId);
+    await db.from('campaigns').update({ total_recipients: count }).eq('id', campaignId);
+
+    res.json({ added: rows.length, total: count });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM recipients WHERE campaign_id = ?').run(req.params.id);
-  db.prepare('DELETE FROM campaigns WHERE id = ?').run(req.params.id);
+router.delete('/:id', async (req, res) => {
+  await db.from('campaigns').delete().eq('id', req.params.id);
   res.json({ success: true });
 });
 
