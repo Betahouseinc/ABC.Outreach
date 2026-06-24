@@ -168,18 +168,18 @@ export default function NewCampaign() {
                 <button style={{ marginLeft: 16, background: 'none', border: 'none', color: 'var(--success)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }} onClick={() => setUploadResult(null)}>Upload another</button>
               </div>
             ) : (
-              <div
+              <label
                 className={`upload-zone${drag ? ' drag' : ''}`}
+                style={{ cursor: 'pointer', display: 'block' }}
                 onDragOver={e => { e.preventDefault(); setDrag(true); }}
                 onDragLeave={() => setDrag(false)}
                 onDrop={e => { e.preventDefault(); setDrag(false); uploadFile(e.dataTransfer.files[0]); }}
-                onClick={() => fileRef.current?.click()}
               >
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <p>{uploading ? 'Uploading...' : 'Drop your CSV here or click to browse'}</p>
                 <p style={{ fontSize: 11, marginTop: 4 }}>Columns: email, name (optional)</p>
-                <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => uploadFile(e.target.files[0])} />
-              </div>
+                <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { uploadFile(e.target.files[0]); e.target.value = ''; }} />
+              </label>
             )}
 
             <div style={{ marginTop: 20, padding: 16, background: 'var(--bg3)', borderRadius: 8 }}>
