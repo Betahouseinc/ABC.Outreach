@@ -10,7 +10,6 @@ router.get('/open/:campaignId/:recipientId', async (req, res) => {
     const { data: r } = await db.from('recipients').select('opened').eq('id', recipientId).eq('campaign_id', campaignId).single();
     if (r && !r.opened) {
       await db.from('recipients').update({ opened: true, open_at: new Date().toISOString() }).eq('id', recipientId);
-      await db.from('campaigns').update({ open_count: db.rpc('increment', { x: 1 }) }).eq('id', campaignId);
       const { data: c } = await db.from('campaigns').select('open_count').eq('id', campaignId).single();
       await db.from('campaigns').update({ open_count: (c?.open_count || 0) + 1 }).eq('id', campaignId);
     }
