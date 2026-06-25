@@ -23,7 +23,7 @@ function injectTracking(html, recipientId, campaignId, baseUrl) {
 }
 
 router.post('/:id/send', async (req, res) => {
-  const { data: campaign } = await db.from('campaigns').select('*').eq('id', req.params.id).single();
+  const { data: campaign } = await db.from('campaigns').select('*').eq('id', req.params.id).eq('org_id', req.orgId).single();
   if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
   if (campaign.status === 'sending') return res.status(400).json({ error: 'Already sending' });
   if (campaign.status === 'sent') return res.status(400).json({ error: 'Already sent' });
@@ -35,7 +35,7 @@ router.post('/:id/send', async (req, res) => {
   const resend = DRY_RUN ? null : new Resend(resendKey);
   const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
 
-  const { data: anyPending } = await db.from('recipients').select('id').eq('campaign_id', campaign.id).eq('status', 'pending').limit(1);
+  const { data: anyPending } = await db.from('recipients').select('id').eq('campaign_id', campaign.id).eq('org_id', req.orgId).eq('status', 'pending').limit(1);
   if (!anyPending?.length) return res.status(400).json({ error: 'No pending recipients' });
 
   await db.from('campaigns').update({ status: 'sending' }).eq('id', campaign.id);
@@ -50,6 +50,7 @@ router.post('/:id/send', async (req, res) => {
       const { data: batch } = await db.from('recipients')
         .select('*')
         .eq('campaign_id', campaign.id)
+        .eq('org_id', req.orgId)
         .eq('status', 'pending')
         .range(offset, offset + BATCH_SIZE - 1);
       
@@ -89,7 +90,7 @@ router.post('/:id/send', async (req, res) => {
 router.get('/:id/progress', async (req, res) => {
   const { data, error } = await db.from('campaigns')
     .select('status, total_recipients, sent_count, failed_count, open_count, click_count')
-    .eq('id', req.params.id).single();
+    .eq('id', req.params.id).eq('org_id', req.orgId).single();
   if (error) return res.status(404).json({ error: 'Not found' });
   res.json(data);
 });

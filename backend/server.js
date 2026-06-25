@@ -4,6 +4,7 @@ const cors = require('cors');
 const db = require('./db');
 const { seedTemplates } = require('./templates');
 const requireAuth = require('./authMiddleware');
+const orgMiddleware = require('./orgMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,9 +28,9 @@ app.use('/track', require('./routes/track'));
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // PROTECTED — all data access and sending requires a valid Supabase session.
-app.use('/api/templates', requireAuth, require('./routes/templates'));
-app.use('/api/campaigns', requireAuth, require('./routes/campaigns'));
-app.use('/api/campaigns', requireAuth, require('./routes/send'));
-app.use('/api/admin', requireAuth, require('./routes/admin'));
+app.use('/api/templates', requireAuth, orgMiddleware, require('./routes/templates'));
+app.use('/api/campaigns', requireAuth, orgMiddleware, require('./routes/campaigns'));
+app.use('/api/campaigns', requireAuth, orgMiddleware, require('./routes/send'));
+app.use('/api/admin', requireAuth, orgMiddleware, require('./routes/admin'));
 
 app.listen(PORT, () => console.log(`exo-mail backend running on http://localhost:${PORT}`));
