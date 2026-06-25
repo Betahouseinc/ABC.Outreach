@@ -35,18 +35,26 @@ router.post('/:id/send', async (req, res) => {
   const resend = DRY_RUN ? null : new Resend(resendKey);
   const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
 
-  const { data: pending } = await db.from('recipients').select('*').eq('campaign_id', campaign.id).eq('status', 'pending');
-  if (!pending?.length) return res.status(400).json({ error: 'No pending recipients' });
+  const { data: anyPending } = await db.from('recipients').select('id').eq('campaign_id', campaign.id).eq('status', 'pending').limit(1);
+  if (!anyPending?.length) return res.status(400).json({ error: 'No pending recipients' });
 
   await db.from('campaigns').update({ status: 'sending' }).eq('id', campaign.id);
-  res.json({ message: DRY_RUN ? 'Sending started (DRY RUN — no real email)' : 'Sending started', total: pending.length, dryRun: DRY_RUN });
+  res.json({ message: DRY_RUN ? 'Sending started (DRY RUN — no real email)' : 'Sending started', total: 0, dryRun: DRY_RUN });
 
-  if (DRY_RUN) console.log(`[exo-mail] DRY RUN for campaign ${campaign.id} — ${pending.length} recipient(s), no real email sent.`);
+  if (DRY_RUN) console.log(`[exo-mail] DRY RUN for campaign ${campaign.id} — sending started, no real email sent.`);
 
   (async () => {
     let sent = 0, failed = 0;
-    for (let i = 0; i < pending.length; i += BATCH_SIZE) {
-      const batch = pending.slice(i, i + BATCH_SIZE);
+    let offset = 0;
+    while (true) {
+      const { data: batch } = await db.from('recipients')
+        .select('*')
+        .eq('campaign_id', campaign.id)
+        .eq('status', 'pending')
+        .range(offset, offset + BATCH_SIZE - 1);
+      
+      if (!batch?.length) break;
+      
       await Promise.all(batch.map(async (r) => {
         try {
           const html = injectTracking(campaign.html_body, r.id, campaign.id, baseUrl);
@@ -67,8 +75,12 @@ router.post('/:id/send', async (req, res) => {
           failed++;
         }
       }));
+      
       await db.from('campaigns').update({ sent_count: sent, failed_count: failed }).eq('id', campaign.id);
-      if (i + BATCH_SIZE < pending.length) await sleep(DELAY_MS);
+      
+      if (batch.length < BATCH_SIZE) break;
+      await sleep(DELAY_MS);
+      offset += BATCH_SIZE;
     }
     await db.from('campaigns').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', campaign.id);
   })();
