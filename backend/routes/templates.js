@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const db = require('../db');
+const { seedTemplates } = require('../templates');
 
 router.get('/', async (req, res) => {
+  await seedTemplates(db, req.orgId);
   const { data, error } = await db.from('templates').select('*').eq('org_id', req.orgId).order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);

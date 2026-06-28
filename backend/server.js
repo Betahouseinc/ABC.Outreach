@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
-const { seedTemplates } = require('./templates');
 const requireAuth = require('./authMiddleware');
 const orgMiddleware = require('./orgMiddleware');
 
@@ -20,8 +19,6 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '10mb' }));
-
-seedTemplates(db);
 
 // PUBLIC — open/click tracking is hit by recipients' mail clients, must stay unauthenticated.
 app.use('/track', require('./routes/track'));

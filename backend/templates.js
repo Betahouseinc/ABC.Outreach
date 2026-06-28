@@ -36,10 +36,10 @@ const BUILT_IN_TEMPLATES = [
   }
 ];
 
-async function seedTemplates(db) {
-  const { count } = await db.from('templates').select('*', { count: 'exact', head: true });
+async function seedTemplates(db, orgId) {
+  const { count } = await db.from('templates').select('*', { count: 'exact', head: true }).eq('org_id', orgId);
   if (count > 0) return;
-  await db.from('templates').insert(BUILT_IN_TEMPLATES);
+  await db.from('templates').insert(BUILT_IN_TEMPLATES.map(t => ({ ...t, org_id: orgId })));
 }
 
 module.exports = { seedTemplates };
