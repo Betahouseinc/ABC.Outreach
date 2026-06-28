@@ -1,0 +1,630 @@
+diff --git a/backend/.env.example b/backend/.env.example
+index e4f4239..977380a 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -3,3 +3,7 @@ SUPABASE_URL=https://your-project.supabase.co
+ SUPABASE_SERVICE_KEY=your_service_role_key_here
+ PORT=3001
+ BASE_URL=http://localhost:3001
++# Comma-separated list of allowed frontend origins (CORS). No trailing slash.
++FRONTEND_URL=http://localhost:5173
++# Comma-separated emails that are admins (bootstraps the first admin).
++ADMIN_EMAILS=you@yourcompany.com
+diff --git a/backend/adminMiddleware.js b/backend/adminMiddleware.js
+new file mode 100644
+index 0000000..1bc67e0
+--- /dev/null
++++ b/backend/adminMiddleware.js
+@@ -0,0 +1,19 @@
++// Determines admin status. Two ways to be an admin (either is enough):
++//  1) email listed in ADMIN_EMAILS (comma-separated) — used to bootstrap the first admin
++//  2) app_metadata.is_admin === true — set when created via the in-app admin page
++function isAdminUser(user) {
++  if (!user) return false;
++  const allow = (process.env.ADMIN_EMAILS || '')
++    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
++  if (user.email && allow.includes(user.email.toLowerCase())) return true;
++  if (user.app_metadata && user.app_metadata.is_admin === true) return true;
++  return false;
++}
++
++// Must run AFTER requireAuth (which sets req.user).
++function requireAdmin(req, res, next) {
++  if (!isAdminUser(req.user)) return res.status(403).json({ error: 'Admin access required' });
++  next();
++}
++
++module.exports = { requireAdmin, isAdminUser };
+diff --git a/backend/authMiddleware.js b/backend/authMiddleware.js
+new file mode 100644
+index 0000000..999935b
+--- /dev/null
++++ b/backend/authMiddleware.js
+@@ -0,0 +1,19 @@
++// Verifies a Supabase user JWT sent as "Authorization: Bearer <token>".
++// Returns 401 if the token is missing, invalid, or expired.
++const db = require('./db'); // Supabase client (service role) — also validates user JWTs
++
++async function requireAuth(req, res, next) {
++  const header = req.headers.authorization || '';
++  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
++  if (!token) return res.status(401).json({ error: 'Authentication required' });
++  try {
++    const { data, error } = await db.auth.getUser(token);
++    if (error || !data?.user) return res.status(401).json({ error: 'Invalid or expired session' });
++    req.user = data.user;
++    next();
++  } catch (e) {
++    return res.status(401).json({ error: 'Auth check failed' });
++  }
++}
++
++module.exports = requireAuth;
+diff --git a/backend/routes/admin.js b/backend/routes/admin.js
+new file mode 100644
+index 0000000..59c0ce6
+--- /dev/null
++++ b/backend/routes/admin.js
+@@ -0,0 +1,46 @@
++const express = require('express');
++const router = express.Router();
++const db = require('../db');
++const { requireAdmin, isAdminUser } = require('../adminMiddleware');
++
++// Any authenticated user: lets the frontend know whether to show the Team page.
++router.get('/check', (req, res) => {
++  res.json({ is_admin: isAdminUser(req.user) });
++});
++
++// Admin only: list internal users.
++router.get('/users', requireAdmin, async (req, res) => {
++  const { data, error } = await db.auth.admin.listUsers();
++  if (error) return res.status(500).json({ error: error.message });
++  const users = (data.users || []).map(u => ({
++    id: u.id,
++    email: u.email,
++    is_admin: isAdminUser(u),
++    last_sign_in_at: u.last_sign_in_at,
++    created_at: u.created_at
++  }));
++  res.json(users);
++});
++
++// Admin only: create an internal user.
++router.post('/users', requireAdmin, async (req, res) => {
++  const { email, password, is_admin } = req.body;
++  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
++  const { data, error } = await db.auth.admin.createUser({
++    email,
++    password,
++    email_confirm: true,
++    app_metadata: { is_admin: !!is_admin }
++  });
++  if (error) return res.status(400).json({ error: error.message });
++  res.json({ id: data.user.id, email: data.user.email });
++});
++
++// Admin only: remove a user.
++router.delete('/users/:id', requireAdmin, async (req, res) => {
++  const { error } = await db.auth.admin.deleteUser(req.params.id);
++  if (error) return res.status(400).json({ error: error.message });
++  res.json({ ok: true });
++});
++
++module.exports = router;
+diff --git a/backend/server.js b/backend/server.js
+index 0751eb6..45344e7 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -3,20 +3,33 @@ const express = require('express');
+ const cors = require('cors');
+ const db = require('./db');
+ const { seedTemplates } = require('./templates');
++const requireAuth = require('./authMiddleware');
+ 
+ const app = express();
+ const PORT = process.env.PORT || 3001;
+ 
+-app.use(cors());
++// Lock CORS to known frontend origin(s). FRONTEND_URL may be comma-separated.
++const allowed = (process.env.FRONTEND_URL || 'http://localhost:5173')
++  .split(',').map(s => s.trim()).filter(Boolean);
++app.use(cors({
++  origin: (origin, cb) => {
++    if (!origin || allowed.includes(origin)) return cb(null, true);
++    return cb(new Error('Not allowed by CORS'));
++  }
++}));
++
+ app.use(express.json({ limit: '10mb' }));
+ 
+ seedTemplates(db);
+ 
+-app.use('/api/templates', require('./routes/templates'));
+-app.use('/api/campaigns', require('./routes/campaigns'));
+-app.use('/api/campaigns', require('./routes/send'));
++// PUBLIC — open/click tracking is hit by recipients' mail clients, must stay unauthenticated.
+ app.use('/track', require('./routes/track'));
+-
+ app.get('/health', (req, res) => res.json({ ok: true }));
+ 
+-app.listen(PORT, () => console.log(`Email tool backend running on http://localhost:${PORT}`));
++// PROTECTED — all data access and sending requires a valid Supabase session.
++app.use('/api/templates', requireAuth, require('./routes/templates'));
++app.use('/api/campaigns', requireAuth, require('./routes/campaigns'));
++app.use('/api/campaigns', requireAuth, require('./routes/send'));
++app.use('/api/admin', requireAuth, require('./routes/admin'));
++
++app.listen(PORT, () => console.log(`exo-mail backend running on http://localhost:${PORT}`));
+diff --git a/frontend/.env.example b/frontend/.env.example
+index bb825fb..74449db 100644
+--- a/frontend/.env.example
++++ b/frontend/.env.example
+@@ -1,3 +1,7 @@
+-# Set this to your Fly.io backend URL after deploying
+-# Leave empty for local dev (uses Vite proxy)
++# Backend API URL. Set to your Fly.io backend URL after deploying.
++# Leave empty for local dev (Vite proxies /api and /track to localhost:3001).
+ VITE_API_URL=
++
++# Supabase project (frontend uses the ANON key — safe to expose in the browser).
++VITE_SUPABASE_URL=https://your-project.supabase.co
++VITE_SUPABASE_ANON_KEY=your_anon_public_key_here
+diff --git a/frontend/index.html b/frontend/index.html
+index 2d7f7aa..60081f5 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -3,7 +3,7 @@
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-    <title>MailBlast — Email Marketing</title>
++    <title>exo-mail — Email Marketing</title>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+   </head>
+diff --git a/frontend/package.json b/frontend/package.json
+index 1ba3253..47f8919 100644
+--- a/frontend/package.json
++++ b/frontend/package.json
+@@ -10,7 +10,8 @@
+   "dependencies": {
+     "react": "^18.3.1",
+     "react-dom": "^18.3.1",
+-    "react-router-dom": "^6.23.1"
++    "react-router-dom": "^6.23.1",
++    "@supabase/supabase-js": "^2.43.4"
+   },
+   "devDependencies": {
+     "@types/react": "^18.3.3",
+diff --git a/frontend/src/App.jsx b/frontend/src/App.jsx
+index 7a5c250..342f2a9 100644
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -1,9 +1,15 @@
+-import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
++import { Routes, Route, NavLink } from 'react-router-dom';
++import { useState, useEffect } from 'react';
+ import Dashboard from './pages/Dashboard';
+ import Campaigns from './pages/Campaigns';
+ import NewCampaign from './pages/NewCampaign';
+ import CampaignDetail from './pages/CampaignDetail';
+ import Templates from './pages/Templates';
++import Login from './pages/Login';
++import Admin from './pages/Admin';
++import { useAuth } from './auth';
++import Logo from './Logo';
++import { api } from './api';
+ 
+ const navItems = [
+   { to: '/', label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> },
+@@ -12,12 +18,26 @@ const navItems = [
+ ];
+ 
+ export default function App() {
+-  const location = useLocation();
++  const { session, signOut } = useAuth();
++  const [isAdmin, setIsAdmin] = useState(false);
++
++  useEffect(() => {
++    if (!session) { setIsAdmin(false); return; }
++    api('/api/admin/check').then(r => r.json()).then(d => setIsAdmin(!!d.is_admin)).catch(() => setIsAdmin(false));
++  }, [session]);
++
++  if (session === undefined) {
++    return <div className="loading-screen">Loading…</div>;
++  }
++  if (!session) {
++    return <Login />;
++  }
++
+   return (
+     <div className="layout">
+       <aside className="sidebar">
+         <div className="sidebar-logo">
+-          <h1>✉ MailBlast</h1>
++          <h1 style={{display:'flex',alignItems:'center',gap:'8px'}}><Logo size={22} /> exo-mail</h1>
+           <span>Email Marketing</span>
+         </div>
+         <nav>
+@@ -32,6 +52,17 @@ export default function App() {
+             </NavLink>
+           ))}
+         </nav>
++        {isAdmin && (
++          <nav style={{ marginTop: 4 }}>
++            <NavLink to="/team" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
++              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> Team
++            </NavLink>
++          </nav>
++        )}
++        <button className="nav-item signout-btn" onClick={signOut}>
++          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
++          Sign out
++        </button>
+       </aside>
+       <main className="main">
+         <Routes>
+@@ -40,6 +71,7 @@ export default function App() {
+           <Route path="/campaigns/new" element={<NewCampaign />} />
+           <Route path="/campaigns/:id" element={<CampaignDetail />} />
+           <Route path="/templates" element={<Templates />} />
++          {isAdmin && <Route path="/team" element={<Admin />} />}
+         </Routes>
+       </main>
+     </div>
+diff --git a/frontend/src/Logo.jsx b/frontend/src/Logo.jsx
+new file mode 100644
+index 0000000..a929a9d
+--- /dev/null
++++ b/frontend/src/Logo.jsx
+@@ -0,0 +1,9 @@
++export default function Logo({ size = 24 }) {
++  return (
++    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
++      <rect x="2.5" y="5" width="19" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
++      <path d="M6 8.7 L18 15.3" stroke="#39ff14" strokeWidth="1.9" strokeLinecap="round" />
++      <path d="M18 8.7 L6 15.3" stroke="#39ff14" strokeWidth="1.9" strokeLinecap="round" />
++    </svg>
++  );
++}
+diff --git a/frontend/src/api.js b/frontend/src/api.js
+index e9af265..8bfc0f5 100644
+--- a/frontend/src/api.js
++++ b/frontend/src/api.js
+@@ -1,5 +1,13 @@
++import { supabase } from './supabase';
++
+ const BASE = import.meta.env.VITE_API_URL || '';
+ 
+-export function api(path, opts) {
+-  return fetch(`${BASE}${path}`, opts);
++// Attaches the current Supabase access token to every request.
++// Preserves caller-provided headers (e.g. Content-Type for JSON, or none for FormData).
++export async function api(path, opts = {}) {
++  const { data } = await supabase.auth.getSession();
++  const token = data?.session?.access_token;
++  const headers = { ...(opts.headers || {}) };
++  if (token) headers['Authorization'] = `Bearer ${token}`;
++  return fetch(`${BASE}${path}`, { ...opts, headers });
+ }
+diff --git a/frontend/src/auth.jsx b/frontend/src/auth.jsx
+new file mode 100644
+index 0000000..b5fb110
+--- /dev/null
++++ b/frontend/src/auth.jsx
+@@ -0,0 +1,25 @@
++import { createContext, useContext, useEffect, useState } from 'react';
++import { supabase } from './supabase';
++
++const AuthContext = createContext(null);
++
++export function AuthProvider({ children }) {
++  const [session, setSession] = useState(undefined); // undefined = still loading
++
++  useEffect(() => {
++    supabase.auth.getSession().then(({ data }) => setSession(data.session));
++    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
++    return () => sub.subscription.unsubscribe();
++  }, []);
++
++  const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
++  const signOut = () => supabase.auth.signOut();
++
++  return (
++    <AuthContext.Provider value={{ session, signIn, signOut }}>
++      {children}
++    </AuthContext.Provider>
++  );
++}
++
++export const useAuth = () => useContext(AuthContext);
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+index 872ef02..bc3e1c6 100644
+--- a/frontend/src/index.css
++++ b/frontend/src/index.css
+@@ -1,16 +1,17 @@
+ *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+ :root {
+-  --bg: #0f0f1a;
+-  --bg2: #1a1a2e;
+-  --bg3: #22223a;
+-  --border: #2a2a4a;
+-  --text: #e8e8f8;
+-  --text2: #9090b8;
+-  --text3: #6060a0;
+-  --accent: #6366f1;
+-  --accent-h: #818cf8;
+-  --success: #10b981;
++  --bg: #0a0a0a;
++  --bg2: #121212;
++  --bg3: #1c1c1c;
++  --border: #2a2a2a;
++  --text: #ffffff;
++  --text2: #a3a3a3;
++  --text3: #6b6b6b;
++  --accent: #39ff14;
++  --accent-h: #5dff44;
++  --accent-ink: #062b00;
++  --success: #39ff14;
+   --danger: #ef4444;
+   --warning: #f59e0b;
+   --radius: 10px;
+@@ -63,7 +64,7 @@ input, textarea, select { font-family: inherit; }
+   margin-bottom: 2px;
+ }
+ .nav-item:hover { background: var(--bg3); color: var(--text); }
+-.nav-item.active { background: var(--accent); color: #fff; }
++.nav-item.active { background: var(--accent); color: var(--accent-ink); }
+ .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+ 
+ .main { margin-left: 220px; flex: 1; padding: 32px; max-width: 1100px; }
+@@ -78,7 +79,7 @@ input, textarea, select { font-family: inherit; }
+   font-size: 13px; font-weight: 600;
+   border: none; transition: all 0.15s;
+ }
+-.btn-primary { background: var(--accent); color: #fff; }
++.btn-primary { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+ .btn-primary:hover { background: var(--accent-h); }
+ .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+ .btn-secondary:hover { background: var(--border); }
+@@ -120,7 +121,7 @@ tr:hover td { background: var(--bg3); }
+ }
+ .badge-draft { background: var(--bg3); color: var(--text2); }
+ .badge-sending { background: rgba(245,158,11,0.15); color: var(--warning); }
+-.badge-sent { background: rgba(16,185,129,0.15); color: var(--success); }
++.badge-sent { background: rgba(57,255,20,0.14); color: var(--success); }
+ .badge-failed { background: rgba(239,68,68,0.15); color: var(--danger); }
+ 
+ .form-group { margin-bottom: 18px; }
+@@ -164,7 +165,7 @@ tr:hover td { background: var(--bg3); }
+   padding: 32px; text-align: center; cursor: pointer;
+   transition: border-color 0.15s;
+ }
+-.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(99,102,241,0.05); }
++.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(57,255,20,0.06); }
+ .upload-zone p { color: var(--text2); font-size: 13px; margin-top: 8px; }
+ 
+ .template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+@@ -173,7 +174,7 @@ tr:hover td { background: var(--bg3); }
+   border-radius: var(--radius); padding: 16px; cursor: pointer;
+   transition: all 0.15s;
+ }
+-.template-card:hover, .template-card.selected { border-color: var(--accent); background: rgba(99,102,241,0.1); }
++.template-card:hover, .template-card.selected { border-color: var(--accent); background: rgba(57,255,20,0.1); }
+ .template-card .cat { font-size: 10px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+ .template-card .name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+ .template-card .subj { font-size: 12px; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@@ -192,4 +193,37 @@ tr:hover td { background: var(--bg3); }
+ .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+ .alert-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #6ee7b7; }
+ .alert-danger { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+-.alert-info { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
++.alert-info { background: rgba(57,255,20,0.1); border: 1px solid rgba(57,255,20,0.35); color: var(--accent); }
++
++/* ---------- Auth / Login ---------- */
++.login-wrap{
++  min-height:100vh;display:flex;align-items:center;justify-content:center;
++  padding:24px;background:var(--bg);
++}
++.login-card{
++  width:100%;max-width:360px;background:var(--bg2);
++  border:1px solid var(--border);border-radius:14px;padding:32px;
++  display:flex;flex-direction:column;gap:14px;
++}
++.login-logo{text-align:center;margin-bottom:8px}
++.login-logo h1{font-size:22px;margin:0;color:var(--text)}
++.login-logo span{font-size:12px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
++.login-title{font-size:16px;font-weight:600;margin:4px 0;color:var(--text)}
++.login-label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--text2)}
++.login-label input{
++  padding:10px 12px;border-radius:8px;border:1px solid var(--border);
++  background:var(--bg);color:var(--text);font-size:14px;
++}
++.login-label input:focus{outline:none;border-color:var(--accent)}
++.login-error{
++  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);
++  color:#fca5a5;padding:9px 12px;border-radius:8px;font-size:13px;
++}
++.loading-screen{
++  min-height:100vh;display:flex;align-items:center;justify-content:center;
++  color:var(--text2);font-size:14px;
++}
++.signout-btn{
++  margin-top:auto;background:none;border:none;cursor:pointer;
++  text-align:left;width:100%;font:inherit;
++}
+diff --git a/frontend/src/main.jsx b/frontend/src/main.jsx
+index 6647a82..cbd6be5 100644
+--- a/frontend/src/main.jsx
++++ b/frontend/src/main.jsx
+@@ -2,10 +2,13 @@ import React from 'react';
+ import ReactDOM from 'react-dom/client';
+ import { BrowserRouter } from 'react-router-dom';
+ import App from './App';
++import { AuthProvider } from './auth';
+ import './index.css';
+ 
+ ReactDOM.createRoot(document.getElementById('root')).render(
+   <BrowserRouter>
+-    <App />
++    <AuthProvider>
++      <App />
++    </AuthProvider>
+   </BrowserRouter>
+ );
+diff --git a/frontend/src/pages/Admin.jsx b/frontend/src/pages/Admin.jsx
+new file mode 100644
+index 0000000..7a89de4
+--- /dev/null
++++ b/frontend/src/pages/Admin.jsx
+@@ -0,0 +1,89 @@
++import { useState, useEffect } from 'react';
++import { api } from '../api';
++
++export default function Admin() {
++  const [users, setUsers] = useState([]);
++  const [email, setEmail] = useState('');
++  const [password, setPassword] = useState('');
++  const [makeAdmin, setMakeAdmin] = useState(false);
++  const [error, setError] = useState('');
++  const [msg, setMsg] = useState('');
++  const [busy, setBusy] = useState(false);
++
++  const load = () =>
++    api('/api/admin/users').then(r => r.json())
++      .then(d => Array.isArray(d) ? setUsers(d) : setError(d.error || 'Failed to load users'));
++
++  useEffect(() => { load(); }, []);
++
++  const addUser = async (e) => {
++    e.preventDefault();
++    setError(''); setMsg(''); setBusy(true);
++    const r = await api('/api/admin/users', {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ email, password, is_admin: makeAdmin })
++    });
++    const d = await r.json();
++    setBusy(false);
++    if (!r.ok) { setError(d.error); return; }
++    setMsg(`Added ${d.email}`);
++    setEmail(''); setPassword(''); setMakeAdmin(false);
++    load();
++  };
++
++  const removeUser = async (id, em) => {
++    if (!window.confirm(`Remove ${em}? They will lose access immediately.`)) return;
++    const r = await api(`/api/admin/users/${id}`, { method: 'DELETE' });
++    if (r.ok) load();
++  };
++
++  return (
++    <div>
++      <div className="page-header"><div><h2>Team</h2></div></div>
++      {error && <div className="alert alert-danger">{error}</div>}
++      {msg && <div className="alert alert-info">{msg}</div>}
++
++      <div className="card" style={{ marginBottom: 20, maxWidth: 560 }}>
++        <h3 style={{ marginBottom: 16, fontSize: 15 }}>Add internal user</h3>
++        <div className="form-group">
++          <label>Email</label>
++          <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="person@company.com" />
++        </div>
++        <div className="form-group">
++          <label>Temporary password</label>
++          <input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="At least 6 characters" />
++        </div>
++        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', margin: '4px 0 18px', cursor: 'pointer' }}>
++          <input type="checkbox" checked={makeAdmin} onChange={e => setMakeAdmin(e.target.checked)} /> Make this user an admin
++        </label>
++        <button className="btn btn-primary" disabled={busy} onClick={addUser}>{busy ? 'Adding…' : 'Add user'}</button>
++      </div>
++
++      <div className="card">
++        <h3 style={{ marginBottom: 16, fontSize: 15 }}>Users ({users.length})</h3>
++        <table className="table" style={{ width: '100%' }}>
++          <thead>
++            <tr><th>Email</th><th>Role</th><th>Last sign in</th><th></th></tr>
++          </thead>
++          <tbody>
++            {users.map(u => (
++              <tr key={u.id}>
++                <td>{u.email}</td>
++                <td>
++                  {u.is_admin
++                    ? <span className="badge badge-sent">admin</span>
++                    : <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--text2)' }}>user</span>}
++                </td>
++                <td style={{ color: 'var(--text2)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : '—'}</td>
++                <td style={{ textAlign: 'right' }}>
++                  <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => removeUser(u.id, u.email)}>Remove</button>
++                </td>
++              </tr>
++            ))}
++          </tbody>
++        </table>
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/src/pages/Login.jsx b/frontend/src/pages/Login.jsx
+new file mode 100644
+index 0000000..f2c3ce8
+--- /dev/null
++++ b/frontend/src/pages/Login.jsx
+@@ -0,0 +1,41 @@
++import { useState } from 'react';
++import { useAuth } from '../auth';
++import Logo from '../Logo';
++
++export default function Login() {
++  const { signIn } = useAuth();
++  const [email, setEmail] = useState('');
++  const [password, setPassword] = useState('');
++  const [error, setError] = useState('');
++  const [busy, setBusy] = useState(false);
++
++  const submit = async (e) => {
++    e.preventDefault();
++    setError(''); setBusy(true);
++    const { error } = await signIn(email, password);
++    setBusy(false);
++    if (error) setError(error.message);
++  };
++
++  return (
++    <div className="login-wrap">
++      <form className="login-card" onSubmit={submit}>
++        <div className="login-logo">
++          <h1 style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}><Logo size={24} /> exo-mail</h1>
++          <span>Email Marketing</span>
++        </div>
++        <h2 className="login-title">Sign in</h2>
++        {error && <div className="login-error">{error}</div>}
++        <label className="login-label">Email
++          <input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
++        </label>
++        <label className="login-label">Password
++          <input type="password" value={password} onChange={e => setPassword(e.target.value)} required autoComplete="current-password" />
++        </label>
++        <button className="btn btn-primary" disabled={busy} type="submit" style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
++          {busy ? 'Signing in…' : 'Sign in'}
++        </button>
++      </form>
++    </div>
++  );
++}
+diff --git a/frontend/src/supabase.js b/frontend/src/supabase.js
+new file mode 100644
+index 0000000..e5e80e6
+--- /dev/null
++++ b/frontend/src/supabase.js
+@@ -0,0 +1,6 @@
++import { createClient } from '@supabase/supabase-js';
++
++const url = import.meta.env.VITE_SUPABASE_URL;
++const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
++
++export const supabase = createClient(url, anon);

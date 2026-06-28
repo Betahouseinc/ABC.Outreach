@@ -1,0 +1,17 @@
+C:\Users\Hitesh M\Desktop\ABC.Outreach\backend\node_modules\@supabase\supabase-js\dist\index.cjs:995
+	if (!trimmedUrl) throw new Error("supabaseUrl is required.");
+	                 ^
+
+Error: supabaseUrl is required.
+    at validateSupabaseUrl (C:\Users\Hitesh M\Desktop\ABC.Outreach\backend\node_modules\@supabase\supabase-js\dist\index.cjs:995:25)
+    at new SupabaseClient (C:\Users\Hitesh M\Desktop\ABC.Outreach\backend\node_modules\@supabase\supabase-js\dist\index.cjs:1235:19)
+    at createClient (C:\Users\Hitesh M\Desktop\ABC.Outreach\backend\node_modules\@supabase\supabase-js\dist\index.cjs:1462:9)
+    at Object.<anonymous> (C:\Users\Hitesh M\Desktop\ABC.Outreach\backend\db.js:3:18)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.require (node:internal/modules/cjs/loader:1556:12)
+
+Node.js v24.14.0

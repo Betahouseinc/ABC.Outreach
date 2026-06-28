@@ -39,7 +39,7 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'name, subject, from_name, from_email, html_body required' });
 
   const id = uuidv4();
-  const { data, error } = await db.from('campaigns').insert({ id, org_id: req.orgId, name, subject, from_name, from_email, template_id: template_id || null, html_body, status: 'draft' }).select().single();
+  const { data, error } = await db.from('campaigns').insert({ id, org_id: req.orgId, name, subject, from_name, from_email, template_id: template_id || null, status: 'draft', html_body }).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });

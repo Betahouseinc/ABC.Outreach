@@ -1,0 +1,61 @@
+diff --git a/backend/routes/send.js b/backend/routes/send.js
+index 129ccaf..a3e95b3 100644
+--- a/backend/routes/send.js
++++ b/backend/routes/send.js
+@@ -6,6 +6,10 @@ const db = require('../db');
+ const BATCH_SIZE = 10;
+ const DELAY_MS = 1100;
+ 
++// Safe by default: real email is sent ONLY when EMAIL_DRY_RUN is explicitly "false".
++// Missing var, "true", or anything else => dry run (logs instead of sending).
++const DRY_RUN = process.env.EMAIL_DRY_RUN !== 'false';
++
+ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+ 
+ function injectTracking(html, recipientId, campaignId, baseUrl) {
+@@ -25,16 +29,19 @@ router.post('/:id/send', async (req, res) => {
+   if (campaign.status === 'sent') return res.status(400).json({ error: 'Already sent' });
+ 
+   const resendKey = process.env.RESEND_API_KEY;
+-  if (!resendKey) return res.status(500).json({ error: 'RESEND_API_KEY not set' });
++  // RESEND_API_KEY is only required for real sends. Dry run does not need it.
++  if (!DRY_RUN && !resendKey) return res.status(500).json({ error: 'RESEND_API_KEY not set' });
+ 
+-  const resend = new Resend(resendKey);
++  const resend = DRY_RUN ? null : new Resend(resendKey);
+   const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+ 
+   const { data: pending } = await db.from('recipients').select('*').eq('campaign_id', campaign.id).eq('status', 'pending');
+   if (!pending?.length) return res.status(400).json({ error: 'No pending recipients' });
+ 
+   await db.from('campaigns').update({ status: 'sending' }).eq('id', campaign.id);
+-  res.json({ message: 'Sending started', total: pending.length });
++  res.json({ message: DRY_RUN ? 'Sending started (DRY RUN — no real email)' : 'Sending started', total: pending.length, dryRun: DRY_RUN });
++
++  if (DRY_RUN) console.log(`[exo-mail] DRY RUN for campaign ${campaign.id} — ${pending.length} recipient(s), no real email sent.`);
+ 
+   (async () => {
+     let sent = 0, failed = 0;
+@@ -43,12 +50,16 @@ router.post('/:id/send', async (req, res) => {
+       await Promise.all(batch.map(async (r) => {
+         try {
+           const html = injectTracking(campaign.html_body, r.id, campaign.id, baseUrl);
+-          await resend.emails.send({
+-            from: `${campaign.from_name} <${campaign.from_email}>`,
+-            to: r.email,
+-            subject: campaign.subject,
+-            html
+-          });
++          if (DRY_RUN) {
++            console.log(`[exo-mail][dry-run] would send → ${r.email} | subject: ${campaign.subject}`);
++          } else {
++            await resend.emails.send({
++              from: `${campaign.from_name} <${campaign.from_email}>`,
++              to: r.email,
++              subject: campaign.subject,
++              html
++            });
++          }
+           await db.from('recipients').update({ status: 'sent' }).eq('id', r.id);
+           sent++;
+         } catch (err) {
