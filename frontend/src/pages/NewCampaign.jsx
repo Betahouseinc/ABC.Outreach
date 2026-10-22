@@ -125,14 +125,18 @@ export default function NewCampaign() {
                 <input type="email" value={form.from_email} onChange={e => set('from_email', e.target.value)} placeholder="you@yourdomain.com" />
               </div>
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: -10 }}>Note: From email must be verified in your Resend account.</p>
+            <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: -10 }}>The From address must be on a verified sending domain (Settings → Sending domains).</p>
           </div>
         )}
 
         {step === 1 && (
           <div>
             <h3 style={{ marginBottom: 6, fontSize: 15 }}>Choose a Template</h3>
-            <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 20 }}>Select a built-in template or paste your own HTML below.</p>
+            <p style={{ color: 'var(--text2)', fontSize: 13, marginBottom: 8 }}>Select a built-in template or paste your own HTML below.</p>
+            <p style={{ color: 'var(--text3)', fontSize: 12, marginBottom: 20 }}>
+              Merge tags: <span className="tag">{'{{name}}'}</span><span className="tag">{'{{first_name}}'}</span><span className="tag">{'{{email}}'}</span><span className="tag">{'{{unsubscribe_url}}'}</span>, plus any CSV column, e.g. <span className="tag">{'{{company}}'}</span>.
+              Every email gets your business address and an unsubscribe link in the footer.
+            </p>
             <div className="template-grid" style={{ marginBottom: 24 }}>
               {templates.map(t => (
                 <div key={t.id} className={`template-card${form.template_id === t.id ? ' selected' : ''}`} onClick={() => selectTemplate(t)}>
@@ -165,6 +169,7 @@ export default function NewCampaign() {
             {uploadResult ? (
               <div className="alert alert-success">
                 ✓ {uploadResult.added.toLocaleString()} recipients added — {uploadResult.total.toLocaleString()} total in campaign.
+                {uploadResult.skipped && (uploadResult.skipped.invalid + uploadResult.skipped.duplicates) > 0 && ` ${uploadResult.skipped.invalid + uploadResult.skipped.duplicates} skipped (invalid or duplicate).`}
                 <button style={{ marginLeft: 16, background: 'none', border: 'none', color: 'var(--success)', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }} onClick={() => setUploadResult(null)}>Upload another</button>
               </div>
             ) : (
@@ -177,7 +182,7 @@ export default function NewCampaign() {
               >
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text3)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <p>{uploading ? 'Uploading...' : 'Drop your CSV here or click to browse'}</p>
-                <p style={{ fontSize: 11, marginTop: 4 }}>Columns: email, name (optional)</p>
+                <p style={{ fontSize: 11, marginTop: 4 }}>Columns: email, name (optional), any others become merge tags</p>
                 <input type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { uploadFile(e.target.files[0]); e.target.value = ''; }} />
               </label>
             )}
@@ -206,7 +211,7 @@ export default function NewCampaign() {
               ))}
             </div>
             <div className="alert alert-info" style={{ marginTop: 20 }}>
-              Campaign saved as draft. You can send it from the campaign detail page.
+              Campaign saved as draft. On the campaign page, use Test run and Send test before sending it.
             </div>
           </div>
         )}

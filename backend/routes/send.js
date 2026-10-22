@@ -1,98 +1,70 @@
 const express = require('express');
 const router = express.Router();
-const { Resend } = require('resend');
-const db = require('../db');
+const config = require('../config');
+const store = require('../lib/store');
+const mailer = require('../lib/mailer');
+const { createSender } = require('../lib/sender');
+const { EMAIL_RE } = require('../lib/csv');
 
-const BATCH_SIZE = 10;
-const DELAY_MS = 1100;
+const sender = createSender({ store, mailer, config });
 
-// Safe by default: real email is sent ONLY when EMAIL_DRY_RUN is explicitly "false".
-// Missing var, "true", or anything else => dry run (logs instead of sending).
-const DRY_RUN = process.env.EMAIL_DRY_RUN !== 'false';
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function injectTracking(html, recipientId, campaignId, baseUrl) {
-  const pixel = `<img src="${baseUrl}/track/open/${campaignId}/${recipientId}" width="1" height="1" style="display:none" alt="">`;
-  let tracked = html.replace(/<\/body>/i, `${pixel}</body>`);
-  tracked = tracked.replace(/href="(https?:\/\/[^"]+)"/g, (match, url) => {
-    if (url.includes('/track/')) return match;
-    return `href="${baseUrl}/track/click/${campaignId}/${recipientId}?url=${encodeURIComponent(url)}"`;
-  });
-  return tracked;
+async function loadCampaign(req, res) {
+  const campaign = await store.getCampaign(req.orgId, req.params.id);
+  if (!campaign) res.status(404).json({ error: 'Campaign not found' });
+  return campaign;
 }
 
+// Real send. Refuses while EMAIL_DRY_RUN is on, and when any pre-flight check fails.
 router.post('/:id/send', async (req, res) => {
-  const { data: campaign } = await db.from('campaigns').select('*').eq('id', req.params.id).eq('org_id', req.orgId).single();
-  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
-  if (campaign.status === 'sending') return res.status(400).json({ error: 'Already sending' });
-  if (campaign.status === 'sent') return res.status(400).json({ error: 'Already sent' });
+  try {
+    const campaign = await loadCampaign(req, res);
+    if (!campaign) return;
+    const out = await sender.startCampaign(req.orgId, campaign);
+    if (out.status !== 200) return res.status(out.status).json({ error: out.error, errors: out.errors });
+    out.done.catch(err => console.error(`[exo-mail] send loop crashed for ${campaign.id}:`, err));
+    res.json({ message: 'Sending started', total: out.pending });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  const resendKey = process.env.RESEND_API_KEY;
-  // RESEND_API_KEY is only required for real sends. Dry run does not need it.
-  if (!DRY_RUN && !resendKey) return res.status(500).json({ error: 'RESEND_API_KEY not set' });
+// Full pipeline without sending: checks, counts and a rendered preview of the first recipient.
+router.post('/:id/test-run', async (req, res) => {
+  try {
+    const campaign = await loadCampaign(req, res);
+    if (!campaign) return;
+    res.json(await sender.testRun(req.orgId, campaign));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-  const resend = DRY_RUN ? null : new Resend(resendKey);
-  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
-
-  const { data: anyPending } = await db.from('recipients').select('id').eq('campaign_id', campaign.id).eq('org_id', req.orgId).eq('status', 'pending').limit(1);
-  if (!anyPending?.length) return res.status(400).json({ error: 'No pending recipients' });
-
-  await db.from('campaigns').update({ status: 'sending' }).eq('id', campaign.id);
-  res.json({ message: DRY_RUN ? 'Sending started (DRY RUN — no real email)' : 'Sending started', total: 0, dryRun: DRY_RUN });
-
-  if (DRY_RUN) console.log(`[exo-mail] DRY RUN for campaign ${campaign.id} — sending started, no real email sent.`);
-
-  (async () => {
-    let sent = 0, failed = 0;
-    let offset = 0;
-    while (true) {
-      const { data: batch } = await db.from('recipients')
-        .select('*')
-        .eq('campaign_id', campaign.id)
-        .eq('org_id', req.orgId)
-        .eq('status', 'pending')
-        .range(offset, offset + BATCH_SIZE - 1);
-      
-      if (!batch?.length) break;
-      
-      await Promise.all(batch.map(async (r) => {
-        try {
-          const html = injectTracking(campaign.html_body, r.id, campaign.id, baseUrl);
-          if (DRY_RUN) {
-            console.log(`[exo-mail][dry-run] would send → ${r.email} | subject: ${campaign.subject}`);
-          } else {
-            await resend.emails.send({
-              from: `${campaign.from_name} <${campaign.from_email}>`,
-              to: r.email,
-              subject: campaign.subject,
-              html
-            });
-          }
-          await db.from('recipients').update({ status: 'sent' }).eq('id', r.id);
-          sent++;
-        } catch (err) {
-          await db.from('recipients').update({ status: 'failed', error_msg: err.message }).eq('id', r.id);
-          failed++;
-        }
-      }));
-      
-      await db.from('campaigns').update({ sent_count: sent, failed_count: failed }).eq('id', campaign.id);
-      
-      if (batch.length < BATCH_SIZE) break;
-      await sleep(DELAY_MS);
-      offset += BATCH_SIZE;
-    }
-    await db.from('campaigns').update({ status: 'sent', sent_at: new Date().toISOString() }).eq('id', campaign.id);
-  })();
+// Sends the campaign (subject prefixed "[TEST]") to up to 5 addresses.
+router.post('/:id/send-test', async (req, res) => {
+  try {
+    const campaign = await loadCampaign(req, res);
+    if (!campaign) return;
+    const emails = [...new Set((req.body.emails || []).map(e => String(e).trim().toLowerCase()).filter(Boolean))];
+    if (!emails.length || emails.length > 5) return res.status(400).json({ error: 'Enter between 1 and 5 email addresses' });
+    const bad = emails.filter(e => !EMAIL_RE.test(e));
+    if (bad.length) return res.status(400).json({ error: `Not valid: ${bad.join(', ')}` });
+    const out = await sender.sendTest(req.orgId, campaign, emails);
+    res.status(out.ok ? 200 : 400).json(out.ok ? out : { error: out.errors.join(' '), errors: out.errors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get('/:id/progress', async (req, res) => {
-  const { data, error } = await db.from('campaigns')
-    .select('status, total_recipients, sent_count, failed_count, open_count, click_count')
-    .eq('id', req.params.id).eq('org_id', req.orgId).single();
-  if (error) return res.status(404).json({ error: 'Not found' });
-  res.json(data);
+  try {
+    const campaign = await store.getCampaign(req.orgId, req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Not found' });
+    const { status, total_recipients, sent_count, failed_count, open_count, click_count, last_error } = campaign;
+    const status_counts = await store.statusCounts(campaign.id, req.orgId);
+    res.json({ status, total_recipients, sent_count, failed_count, open_count, click_count, last_error, status_counts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
