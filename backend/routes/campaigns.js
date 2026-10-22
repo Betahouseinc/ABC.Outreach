@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
-const { parse } = require('csv-parse/sync');
 const db = require('../db');
+const { parseRecipients } = require('../lib/csv');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -54,30 +54,38 @@ router.put('/:id', async (req, res) => {
 router.post('/:id/upload-recipients', upload.single('file'), async (req, res) => {
   try {
     const campaignId = req.params.id;
-    const { data: campaign } = await db.from('campaigns').select('id').eq('id', campaignId).eq('org_id', req.orgId).single();
+    const { data: campaign } = await db.from('campaigns').select('id, status').eq('id', campaignId).eq('org_id', req.orgId).single();
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+    if (!['draft', 'paused'].includes(campaign.status)) return res.status(400).json({ error: `Campaign is ${campaign.status}` });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const records = parse(req.file.buffer.toString('utf-8'), { columns: true, skip_empty_lines: true, trim: true });
-    if (!records.length) return res.status(400).json({ error: 'CSV is empty' });
+    const parsed = parseRecipients(req.file.buffer.toString('utf-8'));
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
 
-    const emailColRaw = Object.keys(records[0]).find(k => ['email', 'email address', 'e-mail'].includes(k.toLowerCase()));
-    const nameColRaw = Object.keys(records[0]).find(k => ['name', 'first_name', 'full_name'].includes(k.toLowerCase()));
-    if (!emailColRaw) return res.status(400).json({ error: 'CSV must have an "email" column' });
-
-    const rows = [];
-    for (const row of records) {
-      const email = (row[emailColRaw] || '').trim();
-      const name = nameColRaw ? (row[nameColRaw] || '').trim() : '';
-      if (email && email.includes('@')) rows.push({ id: uuidv4(), campaign_id: campaignId, org_id: req.orgId, email, name });
+    // Skip addresses already in this campaign (paged: Supabase caps a select at 1000 rows).
+    const existing = new Set();
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await db.from('recipients').select('email').eq('campaign_id', campaignId).eq('org_id', req.orgId).range(from, from + 999);
+      if (error) return res.status(500).json({ error: error.message });
+      data.forEach(r => existing.add(r.email.toLowerCase()));
+      if (data.length < 1000) break;
     }
+    const rows = parsed.rows.filter(r => !existing.has(r.email))
+      .map(r => ({ id: uuidv4(), campaign_id: campaignId, org_id: req.orgId, email: r.email, name: r.name, fields: r.fields }));
 
-    const { error } = await db.from('recipients').upsert(rows, { onConflict: 'id' });
-    if (error) return res.status(500).json({ error: error.message });
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await db.from('recipients').insert(rows.slice(i, i + 500));
+      if (error) return res.status(500).json({ error: error.message });
+    }
 
     const { count } = await db.from('recipients').select('*', { count: 'exact', head: true }).eq('campaign_id', campaignId).eq('org_id', req.orgId);
     await db.from('campaigns').update({ total_recipients: count }).eq('id', campaignId).eq('org_id', req.orgId);
 
-    res.json({ added: rows.length, total: count });
+    res.json({
+      added: rows.length,
+      total: count,
+      skipped: { invalid: parsed.invalid, duplicates: parsed.duplicates + (parsed.rows.length - rows.length) },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

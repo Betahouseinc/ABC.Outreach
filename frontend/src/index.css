@@ -123,6 +123,11 @@ tr:hover td { background: var(--bg3); }
 .badge-sending { background: rgba(245,158,11,0.15); color: var(--warning); }
 .badge-sent { background: rgba(57,255,20,0.14); color: var(--success); }
 .badge-failed { background: rgba(239,68,68,0.15); color: var(--danger); }
+.badge-delivered { background: rgba(57,255,20,0.14); color: var(--success); }
+.badge-pending { background: var(--bg3); color: var(--text2); }
+.badge-paused { background: rgba(239,68,68,0.15); color: var(--danger); }
+.badge-bounced, .badge-complained { background: rgba(239,68,68,0.15); color: var(--danger); }
+.badge-unsubscribed, .badge-suppressed { background: rgba(245,158,11,0.15); color: var(--warning); }
 
 .form-group { margin-bottom: 18px; }
 .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }

@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const config = require('../config');
+const { verifyClick } = require('../lib/tokens');
 
 const PIXEL = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
@@ -31,7 +33,9 @@ router.get('/open/:campaignId/:recipientId', async (req, res) => {
 
 router.get('/click/:campaignId/:recipientId', async (req, res) => {
   const { campaignId, recipientId } = req.params;
-  const { url } = req.query;
+  const { url, sig } = req.query;
+  // Only redirect to links we signed when the email was rendered (no open redirect).
+  if (!verifyClick(config.appSecret, campaignId, recipientId, url, sig)) return res.status(400).send('Invalid link');
   try {
     // Verify campaign exists and get its org_id
     const { data: campaign } = await db.from('campaigns').select('org_id').eq('id', campaignId).single();
@@ -51,8 +55,7 @@ router.get('/click/:campaignId/:recipientId', async (req, res) => {
       await db.from('campaigns').update({ click_count: (c?.click_count || 0) + 1 }).eq('id', campaignId).eq('org_id', campaign.org_id);
     }
   } catch (_) {}
-  if (url) return res.redirect(decodeURIComponent(url));
-  res.send('OK');
+  res.redirect(url);
 });
 
 module.exports = router;
