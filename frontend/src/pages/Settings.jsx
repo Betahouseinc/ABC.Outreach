@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useConfirm } from '../ui';
 
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -9,7 +10,8 @@ function DomainStatus({ d }) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-export default function Settings() {
+export default function Settings({ onChange }) {
+  const [dialog, confirm] = useConfirm();
   const [s, setS] = useState(null);
   const [address, setAddress] = useState('');
   const [domains, setDomains] = useState([]);
@@ -23,7 +25,7 @@ export default function Settings() {
 
   const flash = (m, isError) => { setMsg(isError ? '' : m); setError(isError ? m : ''); };
 
-  const loadSettings = () => api('/api/settings').then(r => r.json()).then(d => { setS(d); setAddress(d.business_address || ''); });
+  const loadSettings = () => api('/api/settings').then(r => r.json()).then(d => { setS(d); setAddress(d.business_address || ''); onChange?.(d); });
   const loadDomains = () => api('/api/settings/domains').then(r => r.json()).then(d => Array.isArray(d) && setDomains(d));
   const loadSupp = (page = 1, q = search) => {
     const qs = new URLSearchParams({ page });
@@ -67,7 +69,8 @@ export default function Settings() {
   };
 
   const removeDomain = async (d) => {
-    if (!confirm(`Remove ${d.domain}? Campaigns can't send from it until it's added again.`)) return;
+    const ok = await confirm({ title: `Remove ${d.domain}?`, body: "Campaigns can't send from it until it's added again.", confirmLabel: 'Remove domain', danger: true });
+    if (!ok) return;
     await api(`/api/settings/domains/${d.id}`, { method: 'DELETE' });
     loadDomains();
   };
@@ -83,10 +86,16 @@ export default function Settings() {
   };
 
   const removeSupp = async (row) => {
-    const warn = row.reason === 'bounce' || row.reason === 'complaint'
-      ? `${row.email} ${row.reason === 'bounce' ? 'bounced' : 'marked your email as spam'}. Sending to it again can hurt your sender reputation. Remove anyway?`
-      : `Remove ${row.email} from the suppression list?`;
-    if (!confirm(warn)) return;
+    const risky = row.reason === 'bounce' || row.reason === 'complaint';
+    const ok = await confirm({
+      title: `Remove ${row.email}?`,
+      body: risky
+        ? `This address ${row.reason === 'bounce' ? 'bounced' : 'marked your email as spam'}. Emailing it again can hurt your sender reputation.`
+        : 'It will receive future campaigns again.',
+      confirmLabel: 'Remove from list',
+      danger: risky,
+    });
+    if (!ok) return;
     await api(`/api/settings/suppressions/${row.id}`, { method: 'DELETE' });
     loadSupp(supp.page);
   };
@@ -96,13 +105,15 @@ export default function Settings() {
   const pages = Math.max(1, Math.ceil(supp.total / supp.limit));
 
   return (
-    <div>
+    <div style={{ maxWidth: 980 }}>
+      {dialog}
       <div className="page-header">
         <div>
           <h2>Settings</h2>
-          <p>Sending via {s.provider.toUpperCase()} · {s.send_rate_per_sec}/sec{s.dry_run ? ' · DRY RUN (nothing is actually sent)' : ''}</p>
+          <p>Sending through Amazon {s.provider.toUpperCase()} · {s.send_rate_per_sec} email{s.send_rate_per_sec === 1 ? '' : 's'} per second · {s.dry_run ? 'Test mode (nothing is actually sent)' : 'Live'}</p>
         </div>
       </div>
+      {!admin && <div className="alert alert-info">Only admins can change these settings.</div>}
 
       {error && <div className="alert alert-danger">{error}</div>}
       {msg && <div className="alert alert-success">{msg}</div>}

@@ -92,7 +92,11 @@ router.post('/:id/upload-recipients', upload.single('file'), async (req, res) =>
 });
 
 router.delete('/:id', async (req, res) => {
-  await db.from('campaigns').delete().eq('id', req.params.id).eq('org_id', req.orgId);
+  const { data: campaign } = await db.from('campaigns').select('status').eq('id', req.params.id).eq('org_id', req.orgId).maybeSingle();
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  if (campaign.status === 'sending') return res.status(409).json({ error: 'This campaign is sending. Wait until it finishes or pauses.' });
+  const { error } = await db.from('campaigns').delete().eq('id', req.params.id).eq('org_id', req.orgId);
+  if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
 

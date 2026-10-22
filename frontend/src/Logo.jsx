@@ -1,9 +1,11 @@
-export default function Logo({ size = 24 }) {
+// eXoMail wordmark. Interim until the new logo arrives: swap the markup here and it changes everywhere.
+export default function Logo({ size = 18, sub = true }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <rect x="2.5" y="5" width="19" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M6 8.7 L18 15.3" stroke="#39ff14" strokeWidth="1.9" strokeLinecap="round" />
-      <path d="M18 8.7 L6 15.3" stroke="#39ff14" strokeWidth="1.9" strokeLinecap="round" />
-    </svg>
+    <span style={{ display: 'inline-flex', flexDirection: 'column', lineHeight: 1.15 }}>
+      <span style={{ fontFamily: 'var(--ff-display)', fontWeight: 600, fontSize: size, letterSpacing: '-0.02em', color: 'var(--text)' }}>
+        e<span style={{ color: 'var(--brand)' }}>X</span>oMail
+      </span>
+      {sub && <span style={{ fontSize: Math.max(11, Math.round(size * 0.62)), color: 'var(--text3)' }}>by eXommerce</span>}
+    </span>
   );
 }

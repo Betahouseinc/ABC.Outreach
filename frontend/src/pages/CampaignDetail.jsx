@@ -1,8 +1,19 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
+import { Icon, useConfirm } from '../ui';
 
 const STATUS_FILTERS = ['', 'pending', 'sent', 'delivered', 'bounced', 'complained', 'unsubscribed', 'suppressed', 'failed'];
+
+function CheckItem({ kind, title, children }) {
+  const icon = kind === 'ok' ? 'check' : kind === 'err' ? 'alert' : 'info';
+  return (
+    <li>
+      <span className={`ic ${kind}`} aria-hidden="true"><Icon name={icon} size={13} strokeWidth={3} /></span>
+      <span><strong>{title}</strong>{children && <p>{children}</p>}</span>
+    </li>
+  );
+}
 
 export default function CampaignDetail() {
   const { id } = useParams();
@@ -21,7 +32,7 @@ export default function CampaignDetail() {
   const [testing, setTesting] = useState(false);
   const [testEmails, setTestEmails] = useState('');
   const [testResult, setTestResult] = useState(null);
-  const fileRef = useRef();
+  const [dialog, confirm] = useConfirm();
   const pollRef = useRef();
 
   const load = async () => {
@@ -63,8 +74,14 @@ export default function CampaignDetail() {
   }, [campaign?.status]);
 
   const sendCampaign = async () => {
-    const verb = campaign.status === 'paused' ? 'Resume sending this campaign' : 'Send this campaign to all pending recipients';
-    if (!confirm(`${verb}? This sends real email.`)) return;
+    const resume = campaign.status === 'paused';
+    const pending = counts ? counts.pending : campaign.total_recipients;
+    const ok = await confirm({
+      title: resume ? 'Resume sending?' : `Send to ${pending.toLocaleString()} recipient${pending === 1 ? '' : 's'}?`,
+      body: resume ? 'Only recipients who have not received it yet will get this email.' : 'This sends real email. Run a Test run first if you have not.',
+      confirmLabel: resume ? 'Resume sending' : 'Send now',
+    });
+    if (!ok) return;
     setSending(true); setMsg('');
     const r = await api(`/api/campaigns/${id}/send`, { method: 'POST' });
     const d = await r.json();
@@ -107,81 +124,94 @@ export default function CampaignDetail() {
     load(); loadProgress(); loadRecipients(1);
   };
 
-  if (!campaign) return <p style={{ color: 'var(--text2)', padding: 20 }}>Loading...</p>;
+  if (!campaign) return <p style={{ color: 'var(--text2)', padding: 20 }}>Loading…</p>;
 
   const canSend = campaign.status === 'draft' || campaign.status === 'paused';
-  const openRate = campaign.sent_count > 0 ? ((campaign.open_count / campaign.sent_count) * 100).toFixed(1) : 0;
-  const clickRate = campaign.sent_count > 0 ? ((campaign.click_count / campaign.sent_count) * 100).toFixed(1) : 0;
+  const openRate = campaign.sent_count > 0 && campaign.open_count > 0 ? `${((campaign.open_count / campaign.sent_count) * 100).toFixed(1)}%` : '—';
+  const clickRate = campaign.sent_count > 0 && campaign.click_count > 0 ? `${((campaign.click_count / campaign.sent_count) * 100).toFixed(1)}%` : '—';
   const done = counts ? campaign.total_recipients - counts.pending : campaign.sent_count + campaign.failed_count;
   const progress = campaign.total_recipients > 0 ? Math.round((done / campaign.total_recipients) * 100) : 0;
   const bounced = counts ? counts.bounced + counts.complained : 0;
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-            <button className="btn btn-secondary btn-sm" onClick={() => nav('/campaigns')}>← Back</button>
+      {dialog}
+      <Link to="/campaigns" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 500, marginBottom: 14 }}>
+        <Icon name="back" size={16} /> All campaigns
+      </Link>
+
+      <div className="page-header" style={{ alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h2>{campaign.name}</h2>
             <span className={`badge badge-${campaign.status}`}>{campaign.status}</span>
           </div>
-          <h2>{campaign.name}</h2>
-          <p>{campaign.subject} · From: {campaign.from_name} &lt;{campaign.from_email}&gt;</p>
+          <p>“{campaign.subject}” · From {campaign.from_name} &lt;{campaign.from_email}&gt;</p>
         </div>
         {canSend && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary" onClick={runTest} disabled={testing}>{testing ? 'Checking…' : 'Test run'}</button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={runTest} disabled={testing}><Icon name="checksquare" size={16} /> {testing ? 'Checking…' : 'Test run'}</button>
             <button className="btn btn-primary" onClick={sendCampaign} disabled={sending || campaign.total_recipients === 0}>
-              {sending ? 'Starting...' : campaign.status === 'paused' ? 'Resume sending' : `Send to ${campaign.total_recipients.toLocaleString()} recipients`}
+              <Icon name="send" size={16} />
+              {sending ? 'Starting…' : campaign.status === 'paused' ? 'Resume sending' : `Send to ${campaign.total_recipients.toLocaleString()}`}
             </button>
           </div>
         )}
         {campaign.status === 'sending' && (
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 600 }}>Sending... {progress}%</div>
-            <div className="progress-bar-wrap" style={{ width: 200, marginTop: 8 }}>
-              <div className="progress-bar" style={{ width: `${progress}%`, background: 'var(--warning)' }} />
-            </div>
+          <div style={{ minWidth: 220 }}>
+            <div style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 600 }}>Sending… {progress}%</div>
+            <div className="progress-bar-wrap"><div className="progress-bar" style={{ width: `${progress}%` }} /></div>
           </div>
         )}
       </div>
 
       {campaign.status === 'paused' && (
-        <div className="alert alert-danger">
+        <div className="alert alert-danger" role="alert">
           <strong>Sending paused.</strong> {campaign.last_error || 'Unknown error.'} Fix the problem, then click Resume sending. Recipients already sent won't get a second copy.
         </div>
       )}
-      {msg && <div className={`alert ${msg.startsWith('✓') ? 'alert-success' : 'alert-danger'}`} style={{ marginBottom: 20 }}>{msg}</div>}
+      {msg && <div className={`alert ${msg.startsWith('✓') ? 'alert-success' : 'alert-danger'}`} role="status">{msg}</div>}
 
       {report && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Test run {report.ok ? '✓ ready to send' : '✕ not ready'}</h3>
-            <button className="btn btn-secondary btn-sm" onClick={() => setReport(null)}>Close</button>
-          </div>
-          {report.errors.map(e => <div key={e} className="alert alert-danger" style={{ marginBottom: 8 }}>{e}</div>)}
-          {report.warnings.map(w => <div key={w} className="alert alert-info" style={{ marginBottom: 8 }}>{w}</div>)}
-          <p style={{ fontSize: 13, color: 'var(--text2)', margin: '8px 0 16px' }}>
-            {report.recipients.willSend.toLocaleString()} will be sent · {report.recipients.suppressed.toLocaleString()} skipped (suppressed) ·
-            about {report.estimatedMinutes} min at {report.ratePerSec}/sec via {report.provider.toUpperCase()}
-          </p>
-          {report.preview && (
-            <>
-              <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 8 }}>Preview for {report.preview.to} · Subject: <strong style={{ color: 'var(--text)' }}>{report.preview.subject}</strong></p>
-              <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-                <iframe srcDoc={report.preview.html} sandbox="" style={{ width: '100%', height: 420, border: 'none' }} title="Rendered preview" />
+        <section className="card" style={{ padding: 0, marginBottom: 22, display: 'flex', flexWrap: 'wrap', overflow: 'hidden' }} aria-label="Test run result">
+          <div style={{ flex: '1 1 360px', padding: 24, display: 'flex', flexDirection: 'column', gap: 16, borderRight: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div>
+                <h3>{report.ok ? 'Ready to send' : report.errors.length === 1 ? 'Almost ready: one thing to fix' : `${report.errors.length} things to fix`}</h3>
+                <p className="card-sub">Nothing was sent during this check.</p>
               </div>
-            </>
+              <button className="btn btn-ghost btn-sm" onClick={() => setReport(null)}>Close</button>
+            </div>
+            <ul className="checklist">
+              {report.errors.map(e => <CheckItem key={e} kind="err" title={e} />)}
+              {report.ok && <CheckItem kind="ok" title="All checks passed">Domain verified, business address set, every merge tag has a value.</CheckItem>}
+              {report.warnings.map(w => <CheckItem key={w} kind="warn" title={w} />)}
+            </ul>
+            <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <div><dt className="cell-sub">Will be sent</dt><dd style={{ fontFamily: 'var(--ff-display)', fontSize: 22, fontWeight: 600 }}>{report.recipients.willSend.toLocaleString()}</dd></div>
+              <div><dt className="cell-sub">Skipped</dt><dd style={{ fontFamily: 'var(--ff-display)', fontSize: 22, fontWeight: 600 }}>{report.recipients.suppressed.toLocaleString()}</dd></div>
+              <div><dt className="cell-sub">Time to send</dt><dd style={{ fontFamily: 'var(--ff-display)', fontSize: 22, fontWeight: 600 }}>{report.estimatedMinutes <= 1 ? '< 1 min' : `${report.estimatedMinutes} min`}</dd></div>
+            </dl>
+          </div>
+          {report.preview && (
+            <div style={{ flex: '1 1 420px', padding: 24, background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <span className="cell-sub" style={{ fontWeight: 600 }}>Preview for {report.preview.to}</span>
+              <div style={{ fontSize: 13, color: 'var(--text2)' }}>Subject: <strong style={{ color: 'var(--text)' }}>{report.preview.subject}</strong></div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                <iframe srcDoc={report.preview.html} sandbox="" style={{ width: '100%', height: 340, border: 'none', display: 'block' }} title="Rendered preview" />
+              </div>
+            </div>
           )}
-        </div>
+        </section>
       )}
 
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
+      <div className="stats-grid">
         {[
           { label: 'Recipients', value: campaign.total_recipients?.toLocaleString() || 0 },
-          { label: 'Sent', value: campaign.sent_count?.toLocaleString() || 0, color: 'var(--success)' },
-          { label: 'Failed / bounced', value: (campaign.failed_count || 0) + bounced, color: (campaign.failed_count || bounced) ? 'var(--danger)' : undefined },
-          { label: 'Open Rate', value: `${openRate}%`, color: 'var(--success)' },
-          { label: 'Click Rate', value: `${clickRate}%`, color: 'var(--accent)' },
+          { label: 'Sent', value: campaign.sent_count?.toLocaleString() || 0 },
+          { label: 'Failed or bounced', value: (campaign.failed_count || 0) + bounced, color: (campaign.failed_count || bounced) ? 'var(--danger)' : undefined },
+          { label: 'Open rate', value: openRate, color: openRate === '—' ? 'var(--text3)' : undefined },
+          { label: 'Click rate', value: clickRate, color: clickRate === '—' ? 'var(--text3)' : undefined },
         ].map(s => (
           <div key={s.label} className="stat-card">
             <div className="label">{s.label}</div>
@@ -190,111 +220,93 @@ export default function CampaignDetail() {
         ))}
       </div>
 
-      {campaign.status === 'sending' && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Sending progress</span>
-            <span style={{ fontSize: 13, color: 'var(--text2)' }}>{done} / {campaign.total_recipients}</span>
-          </div>
-          <div className="progress-bar-wrap" style={{ height: 8 }}>
-            <div className="progress-bar" style={{ width: `${progress}%`, background: 'var(--warning)' }} />
-          </div>
-        </div>
-      )}
-
-      <div className="tab-bar">
-        {['overview', 'recipients', 'preview'].map(t => (
-          <div key={t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => { setTab(t); if (t === 'recipients') loadRecipients(1); }}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </div>
+      <div className="tab-bar" role="tablist" aria-label="Campaign sections">
+        {[['overview', 'Overview'], ['recipients', `Recipients (${campaign.total_recipients || 0})`], ['preview', 'Preview']].map(([t, label]) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={`tab${tab === t ? ' active' : ''}`} onClick={() => { setTab(t); if (t === 'recipients') loadRecipients(1); }}>
+            {label}
+          </button>
         ))}
       </div>
 
       {tab === 'overview' && (
-        <div className="card">
-          <h3 style={{ fontSize: 15, marginBottom: 16, fontWeight: 600 }}>Campaign Details</h3>
-          {[
-            ['Status', <span className={`badge badge-${campaign.status}`}>{campaign.status}</span>],
-            ['Subject', campaign.subject],
-            ['From', `${campaign.from_name} <${campaign.from_email}>`],
-            ['Created', new Date(campaign.created_at).toLocaleString()],
-            ['Sent At', campaign.sent_at ? new Date(campaign.sent_at).toLocaleString() : '—'],
-          ].map(([label, val]) => (
-            <div key={label} style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ width: 120, fontSize: 12, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', flexShrink: 0 }}>{label}</span>
-              <span style={{ fontSize: 14, color: 'var(--text)' }}>{val}</span>
-            </div>
-          ))}
-
-          {counts && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 16 }}>
-              {Object.entries(counts).filter(([, n]) => n > 0).map(([s, n]) => (
-                <span key={s} className={`badge badge-${s}`}>{s}: {n.toLocaleString()}</span>
-              ))}
-            </div>
-          )}
-
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
           {canSend && (
-            <div style={{ marginTop: 24 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Send test</h3>
-              <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
-                Sends this email (subject starts with [TEST]) to up to 5 addresses, using the first recipient's merge-tag values.
-                While Amazon SES is in sandbox mode, these addresses must be verified in SES. Domain and address checks: <Link to="/settings" style={{ color: 'var(--accent)' }}>Settings</Link>.
+            <section className="card" style={{ flex: '1 1 380px' }} aria-label="Send a test">
+              <h3>Send a test</h3>
+              <p className="card-sub" style={{ marginBottom: 14 }}>
+                Sends this email with “[TEST]” in the subject to up to 5 addresses, using the first recipient's details.
+                While Amazon SES is in test mode, these addresses must be verified.
               </p>
-              <div style={{ display: 'flex', gap: 8, maxWidth: 640 }}>
-                <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                  <input value={testEmails} onChange={e => setTestEmails(e.target.value)} placeholder="you@example.com, colleague@example.com" />
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label htmlFor="test-emails">Email addresses</label>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <input id="test-emails" style={{ flex: '1 1 220px', width: 'auto' }} value={testEmails} onChange={e => setTestEmails(e.target.value)} placeholder="you@example.com, colleague@example.com" />
+                  <button className="btn btn-primary" onClick={sendTest} disabled={testing || !testEmails.trim()}>{testing ? 'Sending…' : 'Send test'}</button>
                 </div>
-                <button className="btn btn-secondary" onClick={sendTest} disabled={testing || !testEmails.trim()}>{testing ? 'Sending…' : 'Send test'}</button>
               </div>
               {testResult && (
-                <div className="alert alert-info" style={{ marginTop: 12 }}>
-                  {testResult.dryRun && <div>Dry run is on: nothing was actually sent.</div>}
+                <div className="alert alert-info" style={{ marginTop: 14, marginBottom: 0 }} role="status">
+                  {testResult.dryRun && <div>Test mode is on: nothing was actually sent.</div>}
                   {testResult.results.map(r => <div key={r.to}>{r.to}: {r.status}{r.error ? ` (${r.error})` : ''}</div>)}
                 </div>
               )}
+            </section>
+          )}
 
-              <h3 style={{ fontSize: 14, fontWeight: 600, margin: '24px 0 12px' }}>Add more recipients</h3>
-              <div
+          <section className="card" style={{ flex: '1 1 380px' }} aria-label="Details">
+            <h3 style={{ marginBottom: 12 }}>Details</h3>
+            <dl style={{ display: 'grid', gridTemplateColumns: '130px minmax(0, 1fr)', gap: '10px 16px' }}>
+              <dt style={{ color: 'var(--text2)' }}>From</dt><dd>{campaign.from_name} &lt;{campaign.from_email}&gt;</dd>
+              <dt style={{ color: 'var(--text2)' }}>Created</dt><dd>{new Date(campaign.created_at).toLocaleString()}</dd>
+              <dt style={{ color: 'var(--text2)' }}>Sent</dt><dd>{campaign.sent_at ? new Date(campaign.sent_at).toLocaleString() : '—'}</dd>
+              {counts && <><dt style={{ color: 'var(--text2)' }}>Breakdown</dt><dd style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {Object.entries(counts).filter(([, n]) => n > 0).map(([s, n]) => <span key={s} className={`badge badge-${s}`}>{s}: {n.toLocaleString()}</span>)}
+              </dd></>}
+            </dl>
+          </section>
+
+          {canSend && (
+            <section className="card" style={{ flex: '1 1 100%' }} aria-label="Add recipients">
+              <h3 style={{ marginBottom: 12 }}>Add more recipients</h3>
+              <label
                 className={`upload-zone${drag ? ' drag' : ''}`}
-                style={{ padding: 20 }}
+                style={{ display: 'block', padding: 22 }}
                 onDragOver={e => { e.preventDefault(); setDrag(true); }}
                 onDragLeave={() => setDrag(false)}
                 onDrop={e => { e.preventDefault(); setDrag(false); uploadFile(e.dataTransfer.files[0]); }}
-                onClick={() => fileRef.current?.click()}
               >
-                <p style={{ fontSize: 13 }}>Drop a CSV or click to add recipients</p>
-                <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { uploadFile(e.target.files[0]); e.target.value = ''; }} />
-              </div>
-            </div>
+                <Icon name="upload" size={22} style={{ color: 'var(--text3)' }} />
+                <p>Drop a CSV here or click to choose a file. Duplicates are skipped.</p>
+                <input type="file" accept=".csv" className="sr-only" onChange={e => { uploadFile(e.target.files[0]); e.target.value = ''; }} />
+              </label>
+            </section>
           )}
         </div>
       )}
 
       {tab === 'recipients' && (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 600 }}>Recipients ({total.toLocaleString()})</h3>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div className="card" style={{ padding: 0 }}>
+          <div className="toolbar" style={{ padding: '16px 20px', margin: 0, borderBottom: '1px solid var(--border)' }}>
+            <h3>Recipients ({total.toLocaleString()})</h3>
+            <div className="chips" role="group" aria-label="Filter by status">
               {STATUS_FILTERS.map(s => (
-                <button key={s} className={`btn btn-sm ${filter === s ? 'btn-primary' : 'btn-secondary'}`} onClick={() => loadRecipients(1, s)} style={{ fontSize: 11 }}>
-                  {s || 'All'}
-                </button>
+                <button key={s || 'all'} className={`chip${filter === s ? ' on' : ''}`} aria-pressed={filter === s} onClick={() => loadRecipients(1, s)}>{s || 'All'}</button>
               ))}
             </div>
           </div>
           <div className="table-wrap">
             <table>
               <thead><tr>
-                <th>Email</th><th>Name</th><th>Status</th><th>Opened</th><th>Clicked</th>
+                <th scope="col" style={{ paddingLeft: 20 }}>Email</th><th scope="col">Name</th><th scope="col">Status</th><th scope="col">Opened</th><th scope="col">Clicked</th>
               </tr></thead>
               <tbody>
+                {recipients.length === 0 && <tr><td colSpan={5} style={{ paddingLeft: 20, color: 'var(--text3)' }}>No recipients{filter ? ` with status “${filter}”` : ''}.</td></tr>}
                 {recipients.map(r => (
                   <tr key={r.id}>
-                    <td>{r.email}</td>
+                    <td style={{ paddingLeft: 20 }}>{r.email}</td>
                     <td style={{ color: 'var(--text2)' }}>{r.name || '—'}</td>
-                    <td><span className={`badge badge-${r.status}`} title={r.error_msg || ''}>{r.status}</span></td>
-                    <td>{r.opened ? <span style={{ color: 'var(--success)' }}>✓ {r.open_at ? new Date(r.open_at).toLocaleString() : ''}</span> : '—'}</td>
+                    <td><span className={`badge badge-${r.status}`} title={r.error_msg || ''}>{r.status}</span>{r.error_msg && <div className="cell-sub">{r.error_msg}</div>}</td>
+                    <td>{r.opened ? <span style={{ color: 'var(--accent)' }}>✓ {r.open_at ? new Date(r.open_at).toLocaleString() : ''}</span> : '—'}</td>
                     <td>{r.clicked ? <span style={{ color: 'var(--accent)' }}>✓ {r.click_at ? new Date(r.click_at).toLocaleString() : ''}</span> : '—'}</td>
                   </tr>
                 ))}
@@ -302,7 +314,7 @@ export default function CampaignDetail() {
             </table>
           </div>
           {total > 50 && (
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', padding: 16 }}>
               <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => loadRecipients(page - 1)}>← Prev</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', padding: '6px 12px' }}>Page {page} of {Math.ceil(total / 50)}</span>
               <button className="btn btn-secondary btn-sm" disabled={page * 50 >= total} onClick={() => loadRecipients(page + 1)}>Next →</button>
@@ -313,7 +325,7 @@ export default function CampaignDetail() {
 
       {tab === 'preview' && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <iframe srcDoc={campaign.html_body} sandbox="" style={{ width: '100%', height: 600, border: 'none' }} title="Email preview" />
+          <iframe srcDoc={campaign.html_body} sandbox="" style={{ width: '100%', height: 640, border: 'none', display: 'block', background: '#fff' }} title="Email preview" />
         </div>
       )}
     </div>

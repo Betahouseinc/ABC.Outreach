@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { Icon, useConfirm } from '../ui';
 
 export default function Templates() {
+  const [dialog, confirm] = useConfirm();
   const [templates, setTemplates] = useState([]);
   const [selected, setSelected] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -27,7 +29,7 @@ export default function Templates() {
   };
 
   const del = async (id, name) => {
-    if (!confirm(`Delete template "${name}"?`)) return;
+    if (!(await confirm({ title: `Delete “${name}”?`, body: 'Campaigns already created from it are not affected.', confirmLabel: 'Delete template', danger: true }))) return;
     await api(`/api/templates/${id}`, { method: 'DELETE' });
     if (selected?.id === id) setSelected(null);
     load();
@@ -37,14 +39,14 @@ export default function Templates() {
 
   return (
     <div>
+      {dialog}
       <div className="page-header">
         <div>
           <h2>Templates</h2>
           <p>{templates.length} template{templates.length !== 1 ? 's' : ''}</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Template
+          <Icon name="plus" size={16} strokeWidth={2.4} /> New template
         </button>
       </div>
 
@@ -54,12 +56,14 @@ export default function Templates() {
         <div>
           <div className="template-grid" style={{ gridTemplateColumns: selected ? '1fr' : 'repeat(auto-fill, minmax(200px,1fr))' }}>
             {templates.map(t => (
-              <div key={t.id} className={`template-card${selected?.id === t.id ? ' selected' : ''}`} onClick={() => setSelected(t === selected ? null : t)}>
-                <div className="cat">{t.category || 'Custom'}</div>
-                <div className="name">{t.name}</div>
-                <div className="subj">{t.subject}</div>
+              <div key={t.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <button type="button" aria-pressed={selected?.id === t.id} className={`template-card${selected?.id === t.id ? ' selected' : ''}`} onClick={() => setSelected(t === selected ? null : t)}>
+                  <div className="cat">{t.category || 'Custom'}</div>
+                  <div className="name">{t.name}</div>
+                  <div className="subj">{t.subject}</div>
+                </button>
                 {!t.id.startsWith('tpl_') && (
-                  <button className="btn btn-secondary btn-sm" style={{ marginTop: 10, width: '100%', color: 'var(--danger)' }} onClick={e => { e.stopPropagation(); del(t.id, t.name); }}>Delete</button>
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)', alignSelf: 'flex-start' }} onClick={() => del(t.id, t.name)}>Delete</button>
                 )}
               </div>
             ))}
@@ -73,9 +77,9 @@ export default function Templates() {
                 <span style={{ fontWeight: 600 }}>{selected.name}</span>
                 <span style={{ color: 'var(--text2)', fontSize: 12, marginLeft: 10 }}>{selected.subject}</span>
               </div>
-              <button className="modal-close" onClick={() => setSelected(null)}>×</button>
+              <button className="modal-close" aria-label="Close preview" onClick={() => setSelected(null)}>×</button>
             </div>
-            <iframe srcDoc={selected.html_body} style={{ width: '100%', height: 600, border: 'none' }} title="Template preview" />
+            <iframe srcDoc={selected.html_body} sandbox="" style={{ width: '100%', height: 600, border: 'none', display: 'block', background: '#fff' }} title="Template preview" />
             <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
               <p style={{ fontSize: 12, color: 'var(--text3)' }}>Variables use <span className="tag">{`{{variable_name}}`}</span> syntax — replace with your content when building campaigns.</p>
             </div>

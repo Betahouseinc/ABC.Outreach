@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useConfirm } from '../ui';
 
 export default function Admin() {
+  const [dialog, confirm] = useConfirm();
   const [users, setUsers] = useState([]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,14 +35,15 @@ export default function Admin() {
   };
 
   const removeUser = async (id, em) => {
-    if (!window.confirm(`Remove ${em}? They will lose access immediately.`)) return;
+    if (!(await confirm({ title: `Remove ${em}?`, body: 'They lose access immediately. Their campaigns stay.', confirmLabel: 'Remove user', danger: true }))) return;
     const r = await api(`/api/admin/users/${id}`, { method: 'DELETE' });
     if (r.ok) load();
   };
 
   return (
     <div>
-      <div className="page-header"><div><h2>Team</h2></div></div>
+      {dialog}
+      <div className="page-header"><div><h2>Team</h2><p>People who can sign in to eXoMail.</p></div></div>
       {error && <div className="alert alert-danger">{error}</div>}
       {msg && <div className="alert alert-info">{msg}</div>}
 
@@ -73,11 +76,11 @@ export default function Admin() {
                 <td>
                   {u.is_admin
                     ? <span className="badge badge-sent">admin</span>
-                    : <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--text2)' }}>user</span>}
+                    : <span className="badge badge-draft">member</span>}
                 </td>
                 <td style={{ color: 'var(--text2)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : '—'}</td>
                 <td style={{ textAlign: 'right' }}>
-                  <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => removeUser(u.id, u.email)}>Remove</button>
+                  <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => removeUser(u.id, u.email)}>Remove</button>
                 </td>
               </tr>
             ))}

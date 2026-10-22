@@ -83,7 +83,7 @@ export default function NewCampaign() {
   return (
     <div>
       <div className="page-header">
-        <div><h2>New Campaign</h2></div>
+        <div><h2>New campaign</h2><p>Four short steps. It's saved as a draft until you send it.</p></div>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
@@ -139,11 +139,11 @@ export default function NewCampaign() {
             </p>
             <div className="template-grid" style={{ marginBottom: 24 }}>
               {templates.map(t => (
-                <div key={t.id} className={`template-card${form.template_id === t.id ? ' selected' : ''}`} onClick={() => selectTemplate(t)}>
+                <button type="button" key={t.id} aria-pressed={form.template_id === t.id} className={`template-card${form.template_id === t.id ? ' selected' : ''}`} onClick={() => selectTemplate(t)}>
                   <div className="cat">{t.category}</div>
                   <div className="name">{t.name}</div>
                   <div className="subj">{t.subject}</div>
-                </div>
+                </button>
               ))}
             </div>
             <div className="form-group">

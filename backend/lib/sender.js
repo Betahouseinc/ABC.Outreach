@@ -34,7 +34,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
     if (missing.length) errors.push(`These merge tags have no value: ${missing.map(t => `{{${t}}}`).join(', ')}. Add matching CSV columns or remove them.`);
 
     if (!config.appSecretIsSet) (config.dryRun ? warnings : errors).push('APP_SECRET is not set on the server, so unsubscribe links would stop working after a restart.');
-    if (config.dryRun) warnings.push('EMAIL_DRY_RUN is on: nothing will actually be sent.');
+    if (config.dryRun) warnings.push('Test mode is on: nothing will actually be sent.');
     return { errors, warnings, org, businessAddress, sample };
   }
 
@@ -148,7 +148,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
 
   // Called by POST /send. Returns an error, or starts the loop and returns immediately.
   async function startCampaign(orgId, campaign) {
-    if (config.dryRun) return { status: 400, error: 'EMAIL_DRY_RUN is on, so nothing would be sent. Use Test run to check the campaign.' };
+    if (config.dryRun) return { status: 400, error: 'Test mode is on, so nothing would be sent. Use Test run to check the campaign, or ask your admin to switch sending to live.' };
     if (!['draft', 'paused'].includes(campaign.status)) return { status: 400, error: `Campaign is ${campaign.status}` };
     const pf = await preflight(orgId, campaign);
     if (pf.errors.length) return { status: 400, error: pf.errors.join(' '), errors: pf.errors };
