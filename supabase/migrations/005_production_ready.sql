@@ -91,6 +91,11 @@ DROP POLICY IF EXISTS "Users can manage their org's campaigns" ON campaigns;
 DROP POLICY IF EXISTS "Users can manage their org's recipients" ON recipients;
 DROP POLICY IF EXISTS "Users can manage their org's templates" ON templates;
 
+-- Hand-made policies found in production (not in any migration).
+-- "profiles: self manage" let a signed-in user rewrite their own org_id / role via the REST API.
+DROP POLICY IF EXISTS "profiles: self manage" ON profiles;
+DROP POLICY IF EXISTS "organizations: members read" ON organizations;
+
 -- ---------- Enable RLS everywhere ----------
 ALTER TABLE organizations  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE profiles       ENABLE ROW LEVEL SECURITY;
