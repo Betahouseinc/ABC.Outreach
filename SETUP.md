@@ -5,7 +5,7 @@ with bounce/complaint handling over SNS, a suppression list, one-click unsubscri
 
 | Part | Where |
 |---|---|
-| Backend (Node/Express) | `backend/` → Railway service (Dockerfile), **one** replica only |
+| Backend (Node/Express) | `backend/` → AWS Lightsail `exomail-api`, `https://exomail.exommerce.online` (one instance only) |
 | Frontend (Vite/React) | `frontend/` → Vercel (`exommerce-outreach`) |
 | Database | Supabase project Exommerce.online (`uwisuxbmckvcriutxerv`) |
 | Email | Amazon SES, account in `ap-southeast-2`, configuration set `exomail-default` |
@@ -68,30 +68,49 @@ Submit with `aws sesv2 put-account-details --production-access-enabled --mail-ty
 
 > eXommerce (exommerce.online) uses SES to send occasional marketing and announcement emails (newsletters, service updates, event invitations) from addresses on exommerce.online, through our own campaign tool, eXoMail. Recipients are people who have given us their email address and agreed to hear from us, for example through our website contact form, consultations or events; we do not buy, rent or scrape lists. Every email includes our postal address and a one-click unsubscribe link (List-Unsubscribe and List-Unsubscribe-Post headers); unsubscribes are honoured immediately. SES bounce and complaint notifications are delivered to our application through SNS: hard bounces and complaints are added automatically to a suppression list that is checked before every send, and suppressed addresses are never mailed again. Sending is rate-limited, and new campaigns are test-sent to internal addresses before going out. We expect to start at a few hundred emails per month and grow gradually.
 
-## 3. Backend variables (Railway)
+## 3. Backend server (AWS Lightsail)
 
-Required: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `APP_SECRET` (set once, never change — it signs unsubscribe links),
-`FRONTEND_URL` (Vercel URL(s), comma-separated, no trailing slash), `BASE_URL` (the Railway service URL),
-`ADMIN_EMAILS`, `EMAIL_PROVIDER=ses`, `AWS_REGION=ap-southeast-2`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-`SES_CONFIGURATION_SET=exomail-default`, `SNS_TOPIC_ARN`, `DEFAULT_BUSINESS_ADDRESS`,
-`EMAIL_DRY_RUN=true` (until testing is done), `SEND_RATE_PER_SEC=1` (sandbox; raise to ≤ SES max send rate after approval).
+One Lightsail instance `exomail-api` (Ubuntu 24.04, `nano_3_2`, ap-southeast-2a) with static IP `exomail-ip`,
+ports 22/80/443 open, and DNS `A exomail.exommerce.online → <static IP>`. Node runs the app as the systemd service
+`exomail`; Caddy terminates HTTPS (automatic Let's Encrypt) and proxies to 127.0.0.1:3001.
 
 ```bash
-cd backend && railway up --detach        # Railway builds the Dockerfile and sets PORT
-railway domain                           # public URL → use it as BASE_URL
-curl https://<railway-domain>/health
-aws sns subscribe --topic-arn "$TOPIC" --protocol https --notification-endpoint https://<railway-domain>/webhooks/ses
+aws lightsail create-instances --instance-names exomail-api --availability-zone ap-southeast-2a \
+  --blueprint-id ubuntu_24_04 --bundle-id nano_3_2 --key-pair-name exomail-key \
+  --user-data file://deploy/lightsail-user-data.sh
+aws lightsail allocate-static-ip --static-ip-name exomail-ip
+aws lightsail attach-static-ip --static-ip-name exomail-ip --instance-name exomail-api
+aws lightsail put-instance-public-ports --instance-name exomail-api \
+  --port-infos fromPort=22,toPort=22,protocol=tcp fromPort=80,toPort=80,protocol=tcp fromPort=443,toPort=443,protocol=tcp
+```
+
+`deploy/lightsail-user-data.sh` installs Node (checksum-verified), Caddy, swap, unattended upgrades, the service and
+`/usr/local/bin/exomail-redeploy`. If it didn't run at boot, pipe it to `sudo sh -s` over SSH.
+
+Settings live in `/opt/exomail/.env` (owner `exomail`, mode 600): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`,
+`APP_SECRET` (set once, never change — it signs unsubscribe links), `BASE_URL=https://exomail.exommerce.online`,
+`FRONTEND_URL` (Vercel URL(s), comma-separated, no trailing slash), `ADMIN_EMAILS`, `EMAIL_PROVIDER=ses`,
+`AWS_REGION=ap-southeast-2`, `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (IAM user `exomail-sender`),
+`SES_CONFIGURATION_SET=exomail-default`, `SNS_TOPIC_ARN`, `DEFAULT_BUSINESS_ADDRESS`,
+`EMAIL_DRY_RUN=true` (until testing is done), `SEND_RATE_PER_SEC=1` (sandbox; raise to ≤ SES max send rate after approval).
+After editing it: `sudo systemctl restart exomail`.
+
+```bash
+ssh -i ~/.ssh/exomail_lightsail ubuntu@exomail.exommerce.online
+sudo exomail-redeploy                    # pull production-ready (or: sudo exomail-redeploy main), npm ci, restart
+journalctl -u exomail -f                 # logs
+curl https://exomail.exommerce.online/health
+aws sns subscribe --topic-arn "$TOPIC" --protocol https --notification-endpoint https://exomail.exommerce.online/webhooks/ses
 aws sns list-subscriptions-by-topic --topic-arn "$TOPIC"   # must not say PendingConfirmation
 ```
 
-Keep the service at one replica (the send loop runs in-process), and on a paid plan: the trial's credit runs out
-after 30 days and a stopped backend breaks unsubscribe links and bounce handling.
+Run one instance only (the send loop runs in-process).
 
 The backend confirms the SNS subscription itself and only accepts signed messages from `SNS_TOPIC_ARN`.
 
 ## 4. Frontend (Vercel)
 
-Env: `VITE_API_URL=https://<railway-domain>`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+Env: `VITE_API_URL=https://exomail.exommerce.online`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
 ## 5. Smoke test
 
