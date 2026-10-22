@@ -43,7 +43,7 @@ export default function App() {
     <div className="layout">
       <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
-          <NavLink to="/" aria-label="eXoMail dashboard"><Logo /></NavLink>
+          <NavLink to="/" aria-label="Dashboard"><Logo height={60} /></NavLink>
           <button className="menu-toggle" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}>
             <Icon name="menu" size={20} />
           </button>

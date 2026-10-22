@@ -101,6 +101,7 @@ input, textarea, select { font-family: inherit; }
   .sidebar { position: sticky; width: auto; bottom: auto; padding: 12px 16px; gap: 12px; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
   .sidebar nav, .sidebar-foot { display: none; }
   .sidebar.open nav, .sidebar.open .sidebar-foot { display: flex; }
+  .sidebar-logo img { height: 44px !important; }
   .menu-toggle { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); color: var(--text); }
   .main { margin-left: 0; padding: 22px 16px 48px; }
   .page-header h2 { font-size: 24px; }

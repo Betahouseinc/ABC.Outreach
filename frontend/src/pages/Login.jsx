@@ -36,7 +36,7 @@ export default function Login() {
     <div className="login-wrap">
       {recovering ? (
         <form className="login-card" onSubmit={submitNew}>
-          <div className="login-logo"><Logo size={24} /></div>
+          <div className="login-logo"><Logo height={72} /></div>
           <h1 className="login-title">Choose a new password</h1>
           {error && <div className="login-error" role="alert">{error}</div>}
           <label className="login-label">New password
@@ -46,7 +46,7 @@ export default function Login() {
         </form>
       ) : mode === 'reset' ? (
         <form className="login-card" onSubmit={submitReset}>
-          <div className="login-logo"><Logo size={24} /></div>
+          <div className="login-logo"><Logo height={72} /></div>
           <h1 className="login-title">Reset your password</h1>
           <p className="login-sub">We'll email you a link to choose a new one.</p>
           {error && <div className="login-error" role="alert">{error}</div>}
@@ -59,7 +59,7 @@ export default function Login() {
         </form>
       ) : (
         <form className="login-card" onSubmit={submitSignIn}>
-          <div className="login-logo"><Logo size={24} /></div>
+          <div className="login-logo"><Logo height={72} /></div>
           <h1 className="login-title">Sign in</h1>
           <p className="login-sub">Accounts are created by your team admin.</p>
           {error && <div className="login-error" role="alert">{error}</div>}
