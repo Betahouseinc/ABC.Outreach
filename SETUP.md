@@ -5,9 +5,9 @@ with bounce/complaint handling over SNS, a suppression list, one-click unsubscri
 
 | Part | Where |
 |---|---|
-| Backend (Node/Express) | `backend/` → Fly.io app `mailblast-backend` (run **one** machine: `fly scale count 1`) |
-| Frontend (Vite/React) | `frontend/` → Vercel |
-| Database | Supabase (eXoMail project) |
+| Backend (Node/Express) | `backend/` → Railway service (Dockerfile), **one** replica only |
+| Frontend (Vite/React) | `frontend/` → Vercel (`exommerce-outreach`) |
+| Database | Supabase project Exommerce.online (`uwisuxbmckvcriutxerv`) |
 | Email | Amazon SES, account in `ap-southeast-2`, configuration set `exomail-default` |
 
 ## 1. Database
@@ -68,26 +68,30 @@ Submit with `aws sesv2 put-account-details --production-access-enabled --mail-ty
 
 > eXommerce (exommerce.online) uses SES to send occasional marketing and announcement emails (newsletters, service updates, event invitations) from addresses on exommerce.online, through our own campaign tool, eXoMail. Recipients are people who have given us their email address and agreed to hear from us, for example through our website contact form, consultations or events; we do not buy, rent or scrape lists. Every email includes our postal address and a one-click unsubscribe link (List-Unsubscribe and List-Unsubscribe-Post headers); unsubscribes are honoured immediately. SES bounce and complaint notifications are delivered to our application through SNS: hard bounces and complaints are added automatically to a suppression list that is checked before every send, and suppressed addresses are never mailed again. Sending is rate-limited, and new campaigns are test-sent to internal addresses before going out. We expect to start at a few hundred emails per month and grow gradually.
 
-## 3. Backend secrets (Fly)
+## 3. Backend variables (Railway)
 
 Required: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `APP_SECRET` (set once, never change — it signs unsubscribe links),
-`FRONTEND_URL` (Vercel URL(s), comma-separated, no trailing slash), `BASE_URL=https://mailblast-backend.fly.dev`,
+`FRONTEND_URL` (Vercel URL(s), comma-separated, no trailing slash), `BASE_URL` (the Railway service URL),
 `ADMIN_EMAILS`, `EMAIL_PROVIDER=ses`, `AWS_REGION=ap-southeast-2`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
 `SES_CONFIGURATION_SET=exomail-default`, `SNS_TOPIC_ARN`, `DEFAULT_BUSINESS_ADDRESS`,
 `EMAIL_DRY_RUN=true` (until testing is done), `SEND_RATE_PER_SEC=1` (sandbox; raise to ≤ SES max send rate after approval).
 
 ```bash
-cd backend && fly deploy && fly scale count 1
-curl https://mailblast-backend.fly.dev/health
-aws sns subscribe --topic-arn "$TOPIC" --protocol https --notification-endpoint https://mailblast-backend.fly.dev/webhooks/ses
+cd backend && railway up --detach        # Railway builds the Dockerfile and sets PORT
+railway domain                           # public URL → use it as BASE_URL
+curl https://<railway-domain>/health
+aws sns subscribe --topic-arn "$TOPIC" --protocol https --notification-endpoint https://<railway-domain>/webhooks/ses
 aws sns list-subscriptions-by-topic --topic-arn "$TOPIC"   # must not say PendingConfirmation
 ```
+
+Keep the service at one replica (the send loop runs in-process), and on a paid plan: the trial's credit runs out
+after 30 days and a stopped backend breaks unsubscribe links and bounce handling.
 
 The backend confirms the SNS subscription itself and only accepts signed messages from `SNS_TOPIC_ARN`.
 
 ## 4. Frontend (Vercel)
 
-Env: `VITE_API_URL=https://mailblast-backend.fly.dev`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+Env: `VITE_API_URL=https://<railway-domain>`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
 ## 5. Smoke test
 

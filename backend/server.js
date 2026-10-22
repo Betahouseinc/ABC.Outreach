@@ -6,7 +6,7 @@ const requireAuth = require('./authMiddleware');
 const orgMiddleware = require('./orgMiddleware');
 
 const app = express();
-app.set('trust proxy', true); // behind Fly's proxy
+app.set('trust proxy', true); // behind the host's proxy (Railway)
 
 // PUBLIC — hit by recipients' mail clients and by Amazon SNS, so no auth and no CORS.
 app.use('/track', require('./routes/track'));
