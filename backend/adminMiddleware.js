@@ -16,4 +16,17 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { requireAdmin, isAdminUser };
+// Platform owner (OWNER_EMAILS): sees every company, e.g. monthly usage for billing.
+// Separate from org admins, who only ever see their own company.
+function isOwnerUser(user) {
+  const owners = (process.env.OWNER_EMAILS || '')
+    .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  return !!(user && user.email && owners.includes(user.email.toLowerCase()));
+}
+
+function requireOwner(req, res, next) {
+  if (!isOwnerUser(req.user)) return res.status(403).json({ error: 'Owner access required' });
+  next();
+}
+
+module.exports = { requireAdmin, isAdminUser, requireOwner, isOwnerUser };

@@ -16,6 +16,13 @@ export default function Admin() {
     api('/api/admin/users').then(r => r.json())
       .then(d => Array.isArray(d) ? setUsers(d) : setError(d.error || 'Failed to load users'));
 
+  // Owner only (OWNER_EMAILS on the server): emails sent per company, for monthly invoices.
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [usage, setUsage] = useState(null);
+  useEffect(() => {
+    api(`/api/admin/usage?month=${month}`).then(r => r.ok ? r.json() : null).then(setUsage).catch(() => setUsage(null));
+  }, [month]);
+
   useEffect(() => { load(); }, []);
 
   const addUser = async (e) => {
@@ -87,6 +94,36 @@ export default function Admin() {
           </tbody>
         </table>
       </div>
+
+      {usage && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+            <h3 style={{ fontSize: 15 }}>Usage by company</h3>
+            <input type="month" aria-label="Month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} style={{ width: 'auto' }} />
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
+            Campaign emails sent in the month (UTC), for invoicing. Test emails aren't counted. Only you see this.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Company</th><th style={{ textAlign: 'right' }}>Campaigns sent</th><th style={{ textAlign: 'right' }}>Emails sent</th></tr></thead>
+              <tbody>
+                {usage.orgs.map(o => (
+                  <tr key={o.id}>
+                    <td style={{ fontWeight: 500 }}>{o.name}</td>
+                    <td style={{ textAlign: 'right' }}>{o.campaigns_sent.toLocaleString()}</td>
+                    <td style={{ textAlign: 'right' }}>{o.emails_sent.toLocaleString()}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td style={{ fontWeight: 600 }}>Total</td><td></td>
+                  <td style={{ textAlign: 'right', fontWeight: 600 }}>{usage.total_emails_sent.toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
