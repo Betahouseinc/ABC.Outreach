@@ -1,11 +1,45 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requireAdmin, isAdminUser } = require('../adminMiddleware');
+const { requireAdmin, isAdminUser, requireOwner, isOwnerUser } = require('../adminMiddleware');
 
 // Any authenticated user: lets the frontend know whether to show the Team page.
 router.get('/check', (req, res) => {
-  res.json({ is_admin: isAdminUser(req.user) });
+  res.json({ is_admin: isAdminUser(req.user), is_owner: isOwnerUser(req.user) });
+});
+
+// "2026-10" → UTC start/end of that month; null if malformed.
+function monthRange(month) {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month || '');
+  if (!m) return null;
+  const start = new Date(Date.UTC(+m[1], +m[2] - 1, 1));
+  const end = new Date(Date.UTC(+m[1], +m[2], 1));
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+// Owner only: emails sent per company in a month (for invoicing). ?month=YYYY-MM, default this month (UTC).
+router.get('/usage', requireOwner, async (req, res) => {
+  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const range = monthRange(month);
+  if (!range) return res.status(400).json({ error: 'month must look like 2026-10' });
+  try {
+    const { data: orgs, error } = await db.from('organizations').select('id, name, created_at').order('name');
+    if (error) return res.status(500).json({ error: error.message });
+
+    const rows = await Promise.all(orgs.map(async o => {
+      const sent = db.from('recipients').select('id', { count: 'exact', head: true })
+        .eq('org_id', o.id).eq('status', 'sent').gte('sent_at', range.start).lt('sent_at', range.end);
+      const campaigns = db.from('campaigns').select('id', { count: 'exact', head: true })
+        .eq('org_id', o.id).gte('sent_at', range.start).lt('sent_at', range.end);
+      const [s, c] = await Promise.all([sent, campaigns]);
+      if (s.error || c.error) throw s.error || c.error;
+      return { id: o.id, name: o.name, created_at: o.created_at, emails_sent: s.count || 0, campaigns_sent: c.count || 0 };
+    }));
+
+    res.json({ month, orgs: rows, total_emails_sent: rows.reduce((n, r) => n + r.emails_sent, 0) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // Admin only: list internal users in the same organization.
