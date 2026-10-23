@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
@@ -6,6 +6,7 @@ import NewCampaign from './pages/NewCampaign';
 import CampaignDetail from './pages/CampaignDetail';
 import Templates from './pages/Templates';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 import Admin from './pages/Admin';
 import Settings from './pages/Settings';
 import { useAuth } from './auth';
@@ -33,6 +34,7 @@ export default function App() {
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   if (session === undefined) return <div className="loading-screen">Loading…</div>;
+  if (!session && location.pathname === '/signup') return <Signup />;
   if (!session || recovering) return <Login />;
 
   const isAdmin = !!settings?.is_admin;
@@ -81,6 +83,7 @@ export default function App() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/settings" element={<Settings onChange={setSettings} />} />
           {isAdmin && <Route path="/team" element={<Admin />} />}
+          <Route path="/signup" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

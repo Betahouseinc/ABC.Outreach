@@ -61,7 +61,7 @@ export default function Login() {
         <form className="login-card" onSubmit={submitSignIn}>
           <div className="login-logo"><Logo height={72} /></div>
           <h1 className="login-title">Sign in</h1>
-          <p className="login-sub">Accounts are created by your team admin.</p>
+          <p className="login-sub">New to eXomail? <a href="/signup">Create an account</a></p>
           {error && <div className="login-error" role="alert">{error}</div>}
           <label className="login-label">Email
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />

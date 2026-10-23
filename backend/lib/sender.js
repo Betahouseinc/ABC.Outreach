@@ -23,6 +23,12 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
     const businessAddress = (org.business_address || config.defaultBusinessAddress || '').trim();
     if (!businessAddress) errors.push('Add your business postal address in Settings. It goes in every email footer.');
 
+    // Self-service companies send through their own AWS account, never ours.
+    const house = config.houseOrgIds || [];
+    if (config.provider === 'ses' && house.length && !house.includes(orgId)) {
+      errors.push('Connect your own Amazon SES account in Settings before sending.');
+    }
+
     const domain = domainOf(campaign.from_email);
     if (!domain) errors.push('The From email address is not valid.');
     else if (config.provider === 'ses' && !domainAllowed(domain, await store.verifiedDomains(orgId))) {

@@ -32,6 +32,7 @@ api.use(cors({
   origin: (origin, cb) => cb(null, !origin || config.frontendUrls.includes(origin))
 }));
 api.use(express.json({ limit: '10mb' }));
+api.use('/signup', rateLimit({ windowMs: 10 * 60_000, max: 10 }), require('./routes/signup')); // public
 api.use('/templates', requireAuth, orgMiddleware, require('./routes/templates'));
 api.use('/campaigns', requireAuth, orgMiddleware, require('./routes/campaigns'));
 api.use('/campaigns', requireAuth, orgMiddleware, require('./routes/send'));
