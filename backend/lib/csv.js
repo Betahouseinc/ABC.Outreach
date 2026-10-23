@@ -2,7 +2,8 @@
 const { parse } = require('csv-parse/sync');
 const { normalizeKey } = require('./render');
 
-const EMAIL_RE = /^[^\s@<>()",;]+@[^\s@<>()",;]+\.[^\s@<>()",;]+$/;
+// Starts with a letter or digit, no double dots, and a real-looking domain (rejects things like "'-name@x.com").
+const EMAIL_RE = /^(?!.*\.\.)[a-z0-9][a-z0-9._%+'-]*@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i;
 const EMAIL_COLS = ['email', 'email_address', 'e_mail'];
 const NAME_COLS = ['name', 'full_name', 'first_name'];
 
