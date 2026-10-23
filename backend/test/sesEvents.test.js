@@ -49,6 +49,22 @@ test('reject and rendering failure mark the recipient failed', async () => {
   assert.match(store.recipients[0].error_msg, /bad template/);
 });
 
+test("a customer's topic cannot touch another company's messages", async () => {
+  const store = setup();
+  const out = await handleSesEvent(store,
+    { eventType: 'Complaint', mail, complaint: { complainedRecipients: [{ emailAddress: 'jo@x.com' }] } },
+    { orgIds: ['attacker-org'] });
+  assert.match(out.ignored, /another company/);
+  assert.equal(store.suppressions.length, 0);
+  assert.equal(store.recipients[0].status, 'sent');
+});
+
+test("a customer's topic does update its own company's messages", async () => {
+  const store = setup();
+  await handleSesEvent(store, { eventType: 'Complaint', mail, complaint: { complainedRecipients: [{ emailAddress: 'jo@x.com' }] } }, { orgIds: ['org1'] });
+  assert.equal(store.recipients[0].status, 'complained');
+});
+
 test('events for unknown message ids are ignored; test-send bounces still suppress', async () => {
   const store = setup();
   const out = await handleSesEvent(store, { eventType: 'Bounce', mail: { messageId: 'nope' }, bounce: { bounceType: 'Permanent', bouncedRecipients: [{ emailAddress: 'x@y.com' }] } });

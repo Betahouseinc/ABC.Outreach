@@ -29,20 +29,35 @@ test('a sign-up token is not accepted as an unsubscribe token or vice versa', ()
   assert.equal(verifyUnsubscribe(SECRET, t), null);
 });
 
-function sender(config) {
+function sender(status) {
   const store = fakeStore({ recipients: [{ id: 'r1', campaign_id: 'c1', email: 'u@test.com', name: 'U' }] });
   store.campaigns.c1 = { id: 'c1', status: 'draft', subject: 'Hi', from_name: 'A', from_email: 'news@example.com', html_body: '<p>Hi</p>' };
-  return { store, s: createSender({ store, mailer: fakeMailer(), config: { ...baseConfig, ...config }, sleep: async () => {}, log: { error() {} } }) };
+  const mailer = fakeMailer();
+  const accounts = { async sendingStatus() { return status; } };
+  return { store, mailer, s: createSender({ store, mailer, config: baseConfig, accounts, sleep: async () => {}, log: { error() {} } }) };
 }
 
-test('companies outside HOUSE_ORG_IDS cannot send through our SES', async () => {
-  const { store, s } = sender({ provider: 'ses', houseOrgIds: ['house-org'] });
+test('a company without a connected SES account cannot send', async () => {
+  const { store, mailer, s } = sender({ error: 'Connect your own Amazon SES account in Settings before sending.' });
   const pf = await s.preflight('org1', store.campaigns.c1);
   assert.ok(pf.errors.some(e => /Connect your own Amazon SES/.test(e)));
+  const out = await s.startCampaign('org1', store.campaigns.c1);
+  assert.equal(out.status, 400);
+  assert.equal(mailer.sent.length, 0);
 });
 
-test('the house company is not blocked by the guard', async () => {
-  const { store, s } = sender({ provider: 'ses', houseOrgIds: ['org1'] });
+test('house companies are not blocked', async () => {
+  const { store, s } = sender({ house: true });
   const pf = await s.preflight('org1', store.campaigns.c1);
-  assert.ok(!pf.errors.some(e => /Connect your own Amazon SES/.test(e)));
+  assert.deepEqual(pf.errors, []);
+  assert.equal(pf.rate, baseConfig.sendRatePerSec);
+});
+
+test("a connected company sends at no more than its SES rate, with its orgId, and sandbox is a warning", async () => {
+  const { store, mailer, s } = sender({ maxSendRate: 2, sandbox: true });
+  const pf = await s.preflight('org1', store.campaigns.c1);
+  assert.equal(pf.rate, 2);
+  assert.ok(pf.warnings.some(w => /sandbox/.test(w)));
+  await (await s.startCampaign('org1', store.campaigns.c1)).done;
+  assert.equal(mailer.sent[0].orgId, 'org1');
 });

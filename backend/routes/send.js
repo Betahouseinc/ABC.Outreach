@@ -6,7 +6,7 @@ const mailer = require('../lib/mailer');
 const { createSender } = require('../lib/sender');
 const { EMAIL_RE } = require('../lib/csv');
 
-const sender = createSender({ store, mailer, config });
+const sender = createSender({ store, mailer, config, accounts: require('../lib/awsAccounts') });
 
 async function loadCampaign(req, res) {
   const campaign = await store.getCampaign(req.orgId, req.params.id);

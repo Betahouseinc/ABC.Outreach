@@ -1,13 +1,16 @@
 // Applies one SES event (delivered via SNS) to recipients, events and the suppression list.
 // https://docs.aws.amazon.com/ses/latest/dg/event-publishing-retrieving-sns-contents.html
 
-async function handleSesEvent(store, event) {
+// orgIds: the companies this event's SNS topic may affect (['*'] = any). A customer controls their own
+// topic and could publish anything to it, so an event only ever touches messages of its own company.
+async function handleSesEvent(store, event, { orgIds = ['*'] } = {}) {
   const type = event && (event.eventType || event.notificationType);
   const messageId = event && event.mail && event.mail.messageId;
   if (!type || !messageId) return { ignored: 'not an SES event' };
 
   const link = await store.findSendEvent(messageId);
   if (!link) return { ignored: `unknown message ${messageId}` };
+  if (!orgIds.includes('*') && !orgIds.includes(link.org_id)) return { ignored: `message ${messageId} belongs to another company` };
   const base = { org_id: link.org_id, campaign_id: link.campaign_id, recipient_id: link.recipient_id, message_id: messageId };
   const isRecipient = email => link.recipient_id && email && email.toLowerCase() === (link.email || '').toLowerCase();
   const actions = [];
