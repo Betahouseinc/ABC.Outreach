@@ -27,4 +27,8 @@ module.exports = {
   appSecret,
   appSecretIsSet: !!process.env.APP_SECRET,
   defaultBusinessAddress: process.env.DEFAULT_BUSINESS_ADDRESS || '',
+  // Companies allowed to send through this server's own SES account (ours). Empty = no restriction.
+  houseOrgIds: (process.env.HOUSE_ORG_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
+  // Sender for self-service sign-up confirmations; sign-up is off until it's set.
+  signupFromEmail: process.env.SIGNUP_FROM_EMAIL || '',
 };
