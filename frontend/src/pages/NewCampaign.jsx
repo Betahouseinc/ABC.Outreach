@@ -38,9 +38,9 @@ export default function NewCampaign() {
       body: JSON.stringify(form)
     });
     const d = await r.json();
-    if (!r.ok) { setError(d.error); return false; }
+    if (!r.ok) { setError(d.error); return null; }
     setCampaignId(d.id);
-    return true;
+    return d.id;
   };
 
   const handleNext = async () => {
@@ -60,17 +60,19 @@ export default function NewCampaign() {
 
   const uploadFile = async (file) => {
     if (!file) return;
-    if (!campaignId) {
+    // Use the id returned by createCampaign: campaignId state won't update until the next render.
+    let id = campaignId;
+    if (!id) {
       if (!form.name || !form.subject || !form.from_name || !form.from_email || !form.html_body) {
         setError('Complete steps 1 and 2 before uploading'); return;
       }
-      const ok = await createCampaign();
-      if (!ok) return;
+      id = await createCampaign();
+      if (!id) return;
     }
     setUploading(true);
     const fd = new FormData();
     fd.append('file', file);
-    const r = await api(`/api/campaigns/${campaignId}/upload-recipients`, { method: 'POST', body: fd });
+    const r = await api(`/api/campaigns/${id}/upload-recipients`, { method: 'POST', body: fd });
     const d = await r.json();
     setUploading(false);
     if (!r.ok) { setError(d.error); return; }
