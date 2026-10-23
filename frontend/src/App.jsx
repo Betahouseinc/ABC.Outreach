@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink } from 'react-router-dom';
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
 import Campaigns from './pages/Campaigns';
@@ -10,70 +10,76 @@ import Admin from './pages/Admin';
 import Settings from './pages/Settings';
 import { useAuth } from './auth';
 import Logo from './Logo';
+import { Icon } from './ui';
 import { api } from './api';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> },
-  { to: '/campaigns', label: 'Campaigns', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.63 19.79 19.79 0 01.22 2.18 2 2 0 012.18 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 7.91a16 16 0 006.72 6.72l1.06-1.06a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg> },
-  { to: '/templates', label: 'Templates', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
-  { to: '/settings', label: 'Settings', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg> },
+  { to: '/', label: 'Dashboard', icon: 'dashboard' },
+  { to: '/campaigns', label: 'Campaigns', icon: 'send' },
+  { to: '/templates', label: 'Templates', icon: 'template' },
 ];
 
 export default function App() {
-  const { session, signOut } = useAuth();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { session, signOut, recovering } = useAuth();
+  const [settings, setSettings] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
-    if (!session) { setIsAdmin(false); return; }
-    api('/api/admin/check').then(r => r.json()).then(d => setIsAdmin(!!d.is_admin)).catch(() => setIsAdmin(false));
+    if (!session) { setSettings(null); return; }
+    api('/api/settings').then(r => (r.ok ? r.json() : null)).then(setSettings).catch(() => setSettings(null));
   }, [session]);
 
-  if (session === undefined) {
-    return <div className="loading-screen">Loading…</div>;
-  }
-  if (!session) {
-    return <Login />;
-  }
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
+
+  if (session === undefined) return <div className="loading-screen">Loading…</div>;
+  if (!session || recovering) return <Login />;
+
+  const isAdmin = !!settings?.is_admin;
+  const email = session.user?.email || '';
+  const link = ({ isActive }) => 'nav-item' + (isActive ? ' active' : '');
 
   return (
     <div className="layout">
-      <aside className="sidebar">
+      <aside className={`sidebar${menuOpen ? ' open' : ''}`}>
         <div className="sidebar-logo">
-          <h1 style={{display:'flex',alignItems:'center',gap:'8px'}}><Logo size={22} /> exo-mail</h1>
-          <span>Email Marketing</span>
+          <NavLink to="/" aria-label="Dashboard"><Logo height={60} /></NavLink>
+          <button className="menu-toggle" aria-label="Menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}>
+            <Icon name="menu" size={20} />
+          </button>
         </div>
-        <nav>
+        <nav aria-label="Main">
           {navItems.map(item => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}
-            >
-              {item.icon} {item.label}
+            <NavLink key={item.to} to={item.to} end={item.to === '/'} className={link}>
+              <Icon name={item.icon} /> {item.label}
             </NavLink>
           ))}
+          {isAdmin && <NavLink to="/team" className={link}><Icon name="team" /> Team</NavLink>}
+          <NavLink to="/settings" className={link}><Icon name="settings" /> Settings</NavLink>
         </nav>
-        {isAdmin && (
-          <nav style={{ marginTop: 4 }}>
-            <NavLink to="/team" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg> Team
-            </NavLink>
-          </nav>
-        )}
-        <button className="nav-item signout-btn" onClick={signOut}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          Sign out
-        </button>
+        <div className="sidebar-foot">
+          {settings && (
+            <div className="status-card">
+              <span className="k">Sending status</span>
+              <span className="v"><span className={`dot ${settings.dry_run ? 'dot-test' : 'dot-live'}`} aria-hidden="true" />{settings.dry_run ? 'Test mode' : 'Live'}</span>
+              <span className="s">Amazon SES · {settings.send_rate_per_sec} email{settings.send_rate_per_sec === 1 ? '' : 's'}/sec</span>
+            </div>
+          )}
+          <div className="user-row">
+            <span className="avatar" aria-hidden="true">{email.charAt(0)}</span>
+            <span className="who"><b title={email}>{email}</b><span>{isAdmin ? 'Admin' : 'Member'}</span></span>
+          </div>
+          <button className="nav-item" onClick={signOut}><Icon name="signout" /> Sign out</button>
+        </div>
       </aside>
       <main className="main">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard settings={settings} />} />
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/campaigns/new" element={<NewCampaign />} />
           <Route path="/campaigns/:id" element={<CampaignDetail />} />
           <Route path="/templates" element={<Templates />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings" element={<Settings onChange={setSettings} />} />
           {isAdmin && <Route path="/team" element={<Admin />} />}
         </Routes>
       </main>

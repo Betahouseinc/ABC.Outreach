@@ -125,7 +125,7 @@ test('Test run reports counts and a preview without sending or changing anything
   assert.equal(r.ok, true);
   assert.deepEqual(r.recipients, { pending: 3, suppressed: 1, willSend: 2 });
   assert.equal(r.preview.subject, 'Hi User');
-  assert.ok(r.warnings.some(w => /DRY_RUN/.test(w)));
+  assert.ok(r.warnings.some(w => /Test mode is on/.test(w)));
   assert.equal(mailer.sent.length, 0);
   assert.ok(store.recipients.every(x => x.status === 'pending'));
 });
