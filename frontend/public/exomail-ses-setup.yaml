@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  eXomail sending access. Creates a role that lets eXomail send email through this account's Amazon SES
+  (and read its sending status), an SES configuration set, and an SNS topic that reports bounces and
+  complaints back to eXomail. Delete this stack at any time to remove eXomail's access.
+
+Parameters:
+  ExternalId:
+    Type: String
+    MinLength: 16
+    MaxLength: 64
+    AllowedPattern: '[a-f0-9]+'
+    Description: Your company's external ID from eXomail Settings (filled in by the Launch stack button).
+  ExomailPrincipalArn:
+    Type: String
+    Default: arn:aws:iam::199733224114:user/exomail-sender
+    Description: The eXomail identity allowed to use the role. Leave this as it is.
+
+Resources:
+  EventsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: exomail-ses-events
+
+  EventsTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref EventsTopic]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSesToPublishFromThisAccount
+            Effect: Allow
+            Principal: { Service: ses.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref EventsTopic
+            Condition:
+              StringEquals: { 'aws:SourceAccount': !Ref 'AWS::AccountId' }
+
+  ConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: exomail
+
+  ConfigurationSetEvents:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    DependsOn: EventsTopicPolicy
+    Properties:
+      ConfigurationSetName: !Ref ConfigurationSet
+      EventDestination:
+        Name: exomail-sns
+        Enabled: true
+        MatchingEventTypes: [bounce, complaint, delivery, reject, renderingFailure]
+        SnsDestination:
+          TopicARN: !Ref EventsTopic
+
+  SendingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: eXomailSendingRole
+      Description: Lets eXomail send email through this account's SES. Delete the eXomail-SES stack to revoke.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { AWS: !Ref ExomailPrincipalArn }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { 'sts:ExternalId': !Ref ExternalId }
+      Policies:
+        - PolicyName: exomail-send
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SendEmail
+                Effect: Allow
+                Action: [ses:SendEmail, ses:SendRawEmail]
+                Resource: '*'
+              - Sid: ReadSendingStatus
+                Effect: Allow
+                Action: [ses:GetAccount, ses:GetEmailIdentity, ses:ListEmailIdentities]
+                Resource: '*'
+              - Sid: SubscribeEventsWebhook
+                Effect: Allow
+                Action: sns:Subscribe
+                Resource: !Ref EventsTopic
+
+Outputs:
+  RoleArn:
+    Description: Paste this into eXomail Settings → Amazon SES account.
+    Value: !GetAtt SendingRole.Arn
+  Region:
+    Description: The region to choose in eXomail.
+    Value: !Ref 'AWS::Region'

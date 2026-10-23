@@ -31,4 +31,6 @@ module.exports = {
   houseOrgIds: (process.env.HOUSE_ORG_IDS || '').split(',').map(s => s.trim()).filter(Boolean),
   // Sender for self-service sign-up confirmations; sign-up is off until it's set.
   signupFromEmail: process.env.SIGNUP_FROM_EMAIL || '',
+  // Public S3 URL of deploy/exomail-ses-setup.yaml, for the one-click "Launch stack" link.
+  cfnTemplateUrl: process.env.CFN_TEMPLATE_URL || '',
 };

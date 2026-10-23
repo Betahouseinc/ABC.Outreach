@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useConfirm } from '../ui';
+import AwsConnection from './AwsConnection';
 
 const json = (method, body) => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -140,10 +141,12 @@ export default function Settings({ onChange }) {
         {admin && <button className="btn btn-primary" onClick={saveAddress} disabled={busy === 'address'}>{busy === 'address' ? 'Saving…' : 'Save details'}</button>}
       </div>
 
+      {!s.aws_house && <AwsConnection admin={admin} onChange={loadSettings} />}
+
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 15, marginBottom: 6 }}>Sending domains</h3>
         <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
-          Campaigns can only send from addresses on a verified domain. The domain must already be set up in Amazon SES (DKIM records added); Verify checks its status.
+          Campaigns can only send from addresses on a verified domain. The domain must already be set up in {s.aws_house ? 'Amazon SES' : 'your Amazon SES account'} (DKIM records added); Verify checks its status.
         </p>
         {admin && (
           <form onSubmit={addDomain} style={{ display: 'flex', gap: 8, marginBottom: 16, maxWidth: 480 }}>

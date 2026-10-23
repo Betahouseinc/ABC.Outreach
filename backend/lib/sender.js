@@ -13,7 +13,8 @@ function domainAllowed(domain, verified) {
   return false;
 }
 
-function createSender({ store, mailer, config, sleep = ms => new Promise(r => setTimeout(r, ms)), log = console }) {
+// accounts (optional): lib/awsAccounts — per-company SES connection status. Without it, every company is "house".
+function createSender({ store, mailer, config, accounts = null, sleep = ms => new Promise(r => setTimeout(r, ms)), log = console }) {
 
   // Everything that must be true before real mail goes out. Errors block a real send; warnings don't.
   async function preflight(orgId, campaign) {
@@ -23,11 +24,11 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
     const businessAddress = (org.business_address || config.defaultBusinessAddress || '').trim();
     if (!businessAddress) errors.push('Add your business postal address in Settings. It goes in every email footer.');
 
-    // Self-service companies send through their own AWS account, never ours.
-    const house = config.houseOrgIds || [];
-    if (config.provider === 'ses' && house.length && !house.includes(orgId)) {
-      errors.push('Connect your own Amazon SES account in Settings before sending.');
-    }
+    // Customer companies send through their own SES account (never ours), at no more than its rate limit.
+    const acct = accounts ? await accounts.sendingStatus(orgId) : { house: true };
+    if (acct.error) errors.push(acct.error);
+    if (acct.sandbox) warnings.push('Your Amazon SES account is in the sandbox, so it can only send to addresses verified in SES. Request production access in the SES console.');
+    const rate = Math.min(config.sendRatePerSec, acct.maxSendRate || Infinity);
 
     const domain = domainOf(campaign.from_email);
     if (!domain) errors.push('The From email address is not valid.');
@@ -41,7 +42,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
 
     if (!config.appSecretIsSet) (config.dryRun ? warnings : errors).push('APP_SECRET is not set on the server, so unsubscribe links would stop working after a restart.');
     if (config.dryRun) warnings.push('Test mode is on: nothing will actually be sent.');
-    return { errors, warnings, org, businessAddress, sample };
+    return { errors, warnings, org, businessAddress, sample, rate };
   }
 
   async function testRun(orgId, campaign) {
@@ -62,8 +63,8 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
       dryRun: config.dryRun,
       provider: config.provider,
       recipients: { pending, suppressed, willSend },
-      ratePerSec: config.sendRatePerSec,
-      estimatedMinutes: Math.ceil(willSend / config.sendRatePerSec / 60),
+      ratePerSec: pf.rate,
+      estimatedMinutes: Math.ceil(willSend / pf.rate / 60),
       preview,
     };
   }
@@ -73,6 +74,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
     for (let attempt = 0; ; attempt++) {
       try {
         return await mailer.send({
+          orgId: org.id,
           fromName: campaign.from_name, fromEmail: campaign.from_email, to: recipient.email,
           subject: recipient.id ? email.subject : `[TEST] ${email.subject}`,
           html: email.html, text: email.text, unsubscribeUrl: email.unsubscribeUrl,
@@ -102,7 +104,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
       } catch (err) {
         results.push({ to, status: 'failed', error: err.message });
       }
-      await sleep(1000 / config.sendRatePerSec);
+      await sleep(1000 / pf.rate);
     }
     return { ok: true, dryRun: config.dryRun, warnings: pf.warnings, results };
   }
@@ -115,8 +117,8 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
   }
 
   // The paced loop. Runs in the background after the API has already answered.
-  async function runCampaign(orgId, campaign, { org, businessAddress }) {
-    const interval = 1000 / config.sendRatePerSec;
+  async function runCampaign(orgId, campaign, { org, businessAddress, rate = config.sendRatePerSec }) {
+    const interval = 1000 / rate;
     let afterId = null;
     try {
       for (;;) {
@@ -162,7 +164,7 @@ function createSender({ store, mailer, config, sleep = ms => new Promise(r => se
     if (!pending) return { status: 400, error: 'No pending recipients' };
     const claimed = await store.claimCampaign(orgId, campaign.id, ['draft', 'paused']);
     if (!claimed) return { status: 409, error: 'Campaign is already sending' };
-    const done = runCampaign(orgId, claimed, { org: pf.org, businessAddress: pf.businessAddress });
+    const done = runCampaign(orgId, claimed, { org: pf.org, businessAddress: pf.businessAddress, rate: pf.rate });
     return { status: 200, pending, done };
   }
 

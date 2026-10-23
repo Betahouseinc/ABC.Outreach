@@ -6,6 +6,7 @@ const FATAL_ERRORS = new Set([
   'LimitExceededException', 'SendingPausedException', 'AccountSuspendedException',
   'MailFromDomainNotVerifiedException', 'AccessDeniedException', 'UnrecognizedClientException',
   'InvalidClientTokenId', 'SignatureDoesNotMatch', 'ExpiredTokenException',
+  'NotConnectedException', 'AccessDenied', 'CredentialsProviderError',
 ]);
 const RETRYABLE_ERRORS = new Set(['TooManyRequestsException', 'ThrottlingException', 'Throttling', 'ServiceUnavailable', 'InternalFailure']);
 
@@ -33,12 +34,14 @@ function ses() {
   return sesClient;
 }
 
-async function sendViaSes({ from, to, subject, html, text, headers }) {
+// orgSes: { client, configSet } for a customer's own SES account; null = this server's account.
+async function sendViaSes({ from, to, subject, html, text, headers }, orgSes) {
   const { SendEmailCommand } = require('@aws-sdk/client-sesv2');
-  const out = await ses().send(new SendEmailCommand({
+  const client = orgSes ? orgSes.client : ses();
+  const out = await client.send(new SendEmailCommand({
     FromEmailAddress: from,
     Destination: { ToAddresses: [to] },
-    ConfigurationSetName: config.sesConfigurationSet || undefined,
+    ConfigurationSetName: (orgSes ? orgSes.configSet : config.sesConfigurationSet) || undefined,
     Content: {
       Simple: {
         Subject: { Data: subject, Charset: 'UTF-8' },
@@ -57,7 +60,8 @@ async function sendViaResend({ from, to, subject, html, text, headers }) {
   return { messageId: data && data.id };
 }
 
-// msg: { fromName, fromEmail, to, subject, html, text, unsubscribeUrl }
+// msg: { fromName, fromEmail, to, subject, html, text, unsubscribeUrl, orgId? }
+// With orgId, a customer company sends through its own connected SES account.
 async function send(msg) {
   const payload = {
     from: formatFrom(msg.fromName, msg.fromEmail),
@@ -76,15 +80,18 @@ async function send(msg) {
   }
   if (!config.appSecretIsSet) throw Object.assign(new Error('APP_SECRET is not set'), { name: 'AccessDeniedException' });
   if (config.provider === 'resend') return sendViaResend(payload);
-  return sendViaSes(payload);
+  const orgSes = msg.orgId ? await require('./awsAccounts').sesFor(msg.orgId) : null;
+  return sendViaSes(payload, orgSes);
 }
 
-// SES verification state for a sending domain. Needs ses:GetEmailIdentity.
-async function getDomainStatus(domain) {
+// SES verification state for a sending domain, in the company's own SES account when it has one.
+// Needs ses:GetEmailIdentity.
+async function getDomainStatus(domain, orgId) {
   if (config.provider !== 'ses') return { exists: true, verified: true, dkim: 'N/A', mailFrom: 'N/A', note: `Provider is ${config.provider}; SES check skipped` };
   const { GetEmailIdentityCommand } = require('@aws-sdk/client-sesv2');
+  const orgSes = orgId ? await require('./awsAccounts').sesFor(orgId) : null;
   try {
-    const out = await ses().send(new GetEmailIdentityCommand({ EmailIdentity: domain }));
+    const out = await (orgSes ? orgSes.client : ses()).send(new GetEmailIdentityCommand({ EmailIdentity: domain }));
     return {
       exists: true,
       verified: !!out.VerifiedForSendingStatus,

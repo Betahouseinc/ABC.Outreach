@@ -63,8 +63,17 @@ export default function App() {
           {settings && (
             <div className="status-card">
               <span className="k">Sending status</span>
-              <span className="v"><span className={`dot ${settings.dry_run ? 'dot-test' : 'dot-live'}`} aria-hidden="true" />{settings.dry_run ? 'Test mode' : 'Live'}</span>
-              <span className="s">Amazon SES · {settings.send_rate_per_sec} email{settings.send_rate_per_sec === 1 ? '' : 's'}/sec</span>
+              {settings.aws_connected === false ? (
+                <>
+                  <span className="v"><span className="dot dot-test" aria-hidden="true" />Not connected</span>
+                  <span className="s"><NavLink to="/settings">Connect your SES account</NavLink></span>
+                </>
+              ) : (
+                <>
+                  <span className="v"><span className={`dot ${settings.dry_run ? 'dot-test' : 'dot-live'}`} aria-hidden="true" />{settings.dry_run ? 'Test mode' : 'Live'}</span>
+                  <span className="s">Amazon SES · {settings.send_rate_per_sec} email{settings.send_rate_per_sec === 1 ? '' : 's'}/sec</span>
+                </>
+              )}
             </div>
           )}
           <div className="user-row">
