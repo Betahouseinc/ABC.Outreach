@@ -3,7 +3,7 @@ const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const db = require('../db');
-const { parseRecipients } = require('../lib/csv');
+const { parseRecipients, EMAIL_RE } = require('../lib/csv');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -44,11 +44,25 @@ router.post('/', async (req, res) => {
   res.json(data);
 });
 
+// Edit a campaign that hasn't gone out yet (draft or paused).
 router.put('/:id', async (req, res) => {
-  const { name, subject, from_name, from_email, html_body } = req.body;
-  const { error } = await db.from('campaigns').update({ name, subject, from_name, from_email, html_body }).eq('id', req.params.id).eq('org_id', req.orgId);
+  const { data: campaign } = await db.from('campaigns').select('status').eq('id', req.params.id).eq('org_id', req.orgId).maybeSingle();
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+  if (!['draft', 'paused'].includes(campaign.status)) return res.status(400).json({ error: `A ${campaign.status} campaign can't be edited` });
+
+  const fields = {};
+  for (const k of ['name', 'subject', 'from_name', 'from_email', 'html_body']) {
+    if (req.body[k] === undefined) continue;
+    const v = String(req.body[k]).trim();
+    if (!v) return res.status(400).json({ error: `${k.replace('_', ' ')} can't be empty` });
+    fields[k] = v;
+  }
+  if (fields.from_email && !EMAIL_RE.test(fields.from_email.toLowerCase())) return res.status(400).json({ error: 'From email is not a valid address' });
+  if (req.body.template_id !== undefined) fields.template_id = req.body.template_id || null;
+
+  const { data, error } = await db.from('campaigns').update(fields).eq('id', req.params.id).eq('org_id', req.orgId).select().single();
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
+  res.json(data);
 });
 
 router.post('/:id/upload-recipients', upload.single('file'), async (req, res) => {

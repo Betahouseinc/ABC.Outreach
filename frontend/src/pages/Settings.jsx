@@ -14,6 +14,7 @@ export default function Settings({ onChange }) {
   const [dialog, confirm] = useConfirm();
   const [s, setS] = useState(null);
   const [address, setAddress] = useState('');
+  const [orgName, setOrgName] = useState('');
   const [domains, setDomains] = useState([]);
   const [newDomain, setNewDomain] = useState('');
   const [supp, setSupp] = useState({ suppressions: [], total: 0, page: 1, limit: 50 });
@@ -25,7 +26,7 @@ export default function Settings({ onChange }) {
 
   const flash = (m, isError) => { setMsg(isError ? '' : m); setError(isError ? m : ''); };
 
-  const loadSettings = () => api('/api/settings').then(r => r.json()).then(d => { setS(d); setAddress(d.business_address || ''); onChange?.(d); });
+  const loadSettings = () => api('/api/settings').then(r => r.json()).then(d => { setS(d); setAddress(d.business_address || ''); setOrgName(d.org_name || ''); onChange?.(d); });
   const loadDomains = () => api('/api/settings/domains').then(r => r.json()).then(d => Array.isArray(d) && setDomains(d));
   const loadSupp = (page = 1, q = search) => {
     const qs = new URLSearchParams({ page });
@@ -37,11 +38,11 @@ export default function Settings({ onChange }) {
 
   const saveAddress = async () => {
     setBusy('address');
-    const r = await api('/api/settings', json('PUT', { business_address: address }));
+    const r = await api('/api/settings', json('PUT', { business_address: address, org_name: orgName }));
     const d = await r.json();
     setBusy('');
     if (!r.ok) return flash(d.error, true);
-    flash('Business address saved');
+    flash('Company details saved');
     loadSettings();
   };
 
@@ -119,18 +120,24 @@ export default function Settings({ onChange }) {
       {msg && <div className="alert alert-success">{msg}</div>}
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ fontSize: 15, marginBottom: 6 }}>Business address</h3>
+        <h3 style={{ fontSize: 15, marginBottom: 6 }}>Company details</h3>
         <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>
-          Anti-spam laws require a postal address in every marketing email. It's added to the footer automatically.
+          The company name fills <span className="tag">{'{{company_name}}'}</span> in your emails. Anti-spam laws require a postal address in every
+          marketing email; it's added to the footer automatically.
         </p>
         <div className="form-group">
-          <textarea value={address} onChange={e => setAddress(e.target.value)} disabled={!admin}
-            placeholder={s.default_business_address || 'Company name, street, city, postcode, country'} style={{ minHeight: 80 }} />
+          <label htmlFor="org-name">Company name</label>
+          <input id="org-name" value={orgName} onChange={e => setOrgName(e.target.value)} disabled={!admin} placeholder="Your company name" />
+        </div>
+        <div className="form-group">
+          <label htmlFor="biz-address">Business postal address</label>
+          <textarea id="biz-address" value={address} onChange={e => setAddress(e.target.value)} disabled={!admin}
+            placeholder={s.default_business_address || 'Street, city, postcode, country'} style={{ minHeight: 80 }} />
         </div>
         {!s.business_address && s.default_business_address && (
           <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: -10, marginBottom: 14 }}>Currently using the server default: {s.default_business_address}</p>
         )}
-        {admin && <button className="btn btn-primary" onClick={saveAddress} disabled={busy === 'address'}>{busy === 'address' ? 'Saving…' : 'Save address'}</button>}
+        {admin && <button className="btn btn-primary" onClick={saveAddress} disabled={busy === 'address'}>{busy === 'address' ? 'Saving…' : 'Save details'}</button>}
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>

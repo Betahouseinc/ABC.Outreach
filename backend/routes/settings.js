@@ -23,11 +23,19 @@ router.get('/', async (req, res) => {
   });
 });
 
+// Company name (fills {{company_name}}) and business address (email footer).
 router.put('/', requireAdmin, async (req, res) => {
-  const business_address = String(req.body.business_address || '').trim().slice(0, 500);
-  const { error } = await db.from('organizations').update({ business_address }).eq('id', req.orgId);
+  const patch = {};
+  if (req.body.business_address !== undefined) patch.business_address = String(req.body.business_address).trim().slice(0, 500);
+  if (req.body.org_name !== undefined) {
+    const name = String(req.body.org_name).trim().slice(0, 120);
+    if (!name) return res.status(400).json({ error: "Company name can't be empty" });
+    patch.name = name;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  const { data, error } = await db.from('organizations').update(patch).eq('id', req.orgId).select('name, business_address').single();
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ business_address });
+  res.json({ org_name: data.name, business_address: data.business_address || '' });
 });
 
 // ---- Sending domains ----

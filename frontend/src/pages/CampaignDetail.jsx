@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import { Icon, useConfirm } from '../ui';
+import EditCampaign from './EditCampaign';
 
 const STATUS_FILTERS = ['', 'pending', 'sent', 'delivered', 'bounced', 'complained', 'unsubscribed', 'suppressed', 'failed'];
 
@@ -33,6 +34,7 @@ export default function CampaignDetail() {
   const [testEmails, setTestEmails] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [dialog, confirm] = useConfirm();
+  const [editing, setEditing] = useState(false);
   const pollRef = useRef();
 
   const load = async () => {
@@ -136,6 +138,10 @@ export default function CampaignDetail() {
   return (
     <div>
       {dialog}
+      {editing && (
+        <EditCampaign campaign={campaign} onClose={() => setEditing(false)}
+          onSaved={updated => { setCampaign(prev => ({ ...prev, ...updated })); setEditing(false); setReport(null); setMsg('✓ Campaign saved. Run Test run to check it.'); }} />
+      )}
       <Link to="/campaigns" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 500, marginBottom: 14 }}>
         <Icon name="back" size={16} /> All campaigns
       </Link>
@@ -150,6 +156,7 @@ export default function CampaignDetail() {
         </div>
         {canSend && (
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={() => setEditing(true)}>Edit</button>
             <button className="btn btn-secondary" onClick={runTest} disabled={testing}><Icon name="checksquare" size={16} /> {testing ? 'Checking…' : 'Test run'}</button>
             <button className="btn btn-primary" onClick={sendCampaign} disabled={sending || campaign.total_recipients === 0}>
               <Icon name="send" size={16} />
