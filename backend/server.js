@@ -17,6 +17,12 @@ app.use('/track', rateLimit({ windowMs: 60_000, max: 300 }), require('./routes/t
 app.use('/u', rateLimit({ windowMs: 60_000, max: 30 }), require('./routes/unsubscribe'));
 app.use('/webhooks', rateLimit({ windowMs: 60_000, max: 600 }), require('./routes/webhooks'));
 app.get('/health', (req, res) => res.json({ ok: true, provider: config.provider, dryRun: config.dryRun }));
+// Also checks the database. The server's daily cron calls it, which stops the free Supabase project pausing.
+app.get('/health/db', rateLimit({ windowMs: 60_000, max: 30 }), async (req, res) => {
+  const { error } = await require('./db').from('organizations').select('id', { head: true, count: 'exact' }).limit(1);
+  if (error) return res.status(503).json({ ok: false, db: 'unreachable' });
+  res.json({ ok: true, db: 'ok' });
+});
 
 // PROTECTED — browser API: CORS locked to FRONTEND_URL, and a valid Supabase session required.
 const api = express.Router();
