@@ -94,7 +94,9 @@ router.post('/users', requireAdmin, async (req, res) => {
       email,
       password,
       email_confirm: true,
-      app_metadata: { is_admin: !!is_admin }
+      app_metadata: { is_admin: !!is_admin },
+      // The admin chose this password, so the app makes the user replace it on first sign-in.
+      user_metadata: { must_change_password: true }
     });
     
     if (error) return res.status(400).json({ error: error.message });

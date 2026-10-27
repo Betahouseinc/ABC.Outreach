@@ -21,7 +21,7 @@ const navItems = [
 ];
 
 export default function App() {
-  const { session, signOut, recovering } = useAuth();
+  const { session, signOut, recovering, mustChangePassword } = useAuth();
   const [settings, setSettings] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -35,7 +35,7 @@ export default function App() {
 
   if (session === undefined) return <div className="loading-screen">Loading…</div>;
   if (!session && location.pathname === '/signup') return <Signup />;
-  if (!session || recovering) return <Login />;
+  if (!session || recovering || mustChangePassword) return <Login />;
 
   const isAdmin = !!settings?.is_admin;
   const email = session.user?.email || '';

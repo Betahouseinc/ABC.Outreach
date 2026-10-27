@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { useAuth } from '../auth';
 import Logo from '../Logo';
 
-// Sign in, "forgot password", and setting a new password after the reset email.
+// Sign in, "forgot password", and setting a new password after the reset email
+// or on first sign-in with a password an admin chose.
 export default function Login() {
-  const { signIn, sendReset, setNewPassword, recovering } = useAuth();
+  const { signIn, signOut, sendReset, setNewPassword, recovering, mustChangePassword } = useAuth();
   const [mode, setMode] = useState('signin'); // signin | reset
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,15 +35,17 @@ export default function Login() {
 
   return (
     <div className="login-wrap">
-      {recovering ? (
+      {recovering || mustChangePassword ? (
         <form className="login-card" onSubmit={submitNew}>
           <div className="login-logo"><Logo height={72} /></div>
           <h1 className="login-title">Choose a new password</h1>
+          {mustChangePassword && !recovering && <p className="login-sub">Your account was set up with a temporary password. Pick your own to continue.</p>}
           {error && <div className="login-error" role="alert">{error}</div>}
           <label className="login-label">New password
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
           </label>
           <button className="btn btn-primary" disabled={busy} type="submit">{busy ? 'Saving…' : 'Save password'}</button>
+          {mustChangePassword && !recovering && <button type="button" className="link-btn" onClick={signOut}>Sign out</button>}
         </form>
       ) : mode === 'reset' ? (
         <form className="login-card" onSubmit={submitReset}>
