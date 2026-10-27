@@ -41,6 +41,14 @@ export default function Admin() {
     load();
   };
 
+  const sendPasswordLink = async (id, em) => {
+    setError(''); setMsg('');
+    const r = await api(`/api/admin/users/${id}/password-link`, { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setError(d.error || 'Could not send the link'); return; }
+    setMsg(`Password link sent to ${em}`);
+  };
+
   const removeUser = async (id, em) => {
     if (!(await confirm({ title: `Remove ${em}?`, body: 'They lose access immediately. Their campaigns stay.', confirmLabel: 'Remove user', danger: true }))) return;
     const r = await api(`/api/admin/users/${id}`, { method: 'DELETE' });
@@ -86,7 +94,8 @@ export default function Admin() {
                     : <span className="badge badge-draft">member</span>}
                 </td>
                 <td style={{ color: 'var(--text2)' }}>{u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : '—'}</td>
-                <td style={{ textAlign: 'right' }}>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => sendPasswordLink(u.id, u.email)}>Send password link</button>
                   <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => removeUser(u.id, u.email)}>Remove</button>
                 </td>
               </tr>
