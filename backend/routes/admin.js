@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const config = require('../config');
+const mailer = require('../lib/mailer');
+const { escapeHtml } = require('../lib/render');
 const { requireAdmin, isAdminUser, requireOwner, isOwnerUser } = require('../adminMiddleware');
 
 // Any authenticated user: lets the frontend know whether to show the Team page.
@@ -120,6 +123,39 @@ router.post('/users', requireAdmin, async (req, res) => {
     res.json({ id: data.user.id, email: data.user.email });
   } catch (err) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Admin only: email a user in this organization a one-time link to set their own password.
+// Sent through our mailer (Supabase Auth has no custom SMTP, so its own reset emails don't reach outside addresses).
+router.post('/users/:id/password-link', requireAdmin, async (req, res) => {
+  if (!config.signupFromEmail) return res.status(503).json({ error: 'Email sending is not set up.' });
+  try {
+    const { data: profile } = await db.from('profiles').select('id').eq('id', req.params.id).eq('org_id', req.orgId).maybeSingle();
+    if (!profile) return res.status(404).json({ error: 'User not found' });
+
+    const { data: u, error: userError } = await db.auth.admin.getUserById(profile.id);
+    if (userError) return res.status(500).json({ error: userError.message });
+    const email = u.user.email;
+
+    const { data, error } = await db.auth.admin.generateLink({
+      type: 'recovery', email, options: { redirectTo: config.frontendUrls[0] }
+    });
+    if (error) return res.status(500).json({ error: error.message });
+    const link = data.properties.action_link;
+
+    await mailer.send({
+      fromName: 'eXomail', fromEmail: config.signupFromEmail, to: email,
+      subject: 'Set your eXomail password',
+      html: `<p>Hi,</p><p>Use this link to set the password for your eXomail account (<strong>${escapeHtml(email)}</strong>):</p>
+<p><a href="${escapeHtml(link)}" style="display:inline-block;background:#109840;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none">Set my password</a></p>
+<p style="color:#666;font-size:13px">The link works once and expires in an hour. If you weren't expecting this, you can ignore this email.</p>`,
+      text: `Use this link to set the password for your eXomail account (${email}):\n\n${link}\n\nThe link works once and expires in an hour. If you weren't expecting this, you can ignore this email.`,
+    });
+    res.json({ ok: true, email });
+  } catch (err) {
+    console.error('[exo-mail] password link failed:', err.message);
+    res.status(502).json({ error: 'Could not send the email. Try again shortly.' });
   }
 });
 
