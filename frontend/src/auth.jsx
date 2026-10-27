@@ -20,14 +20,16 @@ export function AuthProvider({ children }) {
   const signIn = (email, password) => supabase.auth.signInWithPassword({ email, password });
   const signOut = () => supabase.auth.signOut();
   const sendReset = email => supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+  // set when an admin created the account with a password they picked (Team page)
+  const mustChangePassword = !!session?.user?.user_metadata?.must_change_password;
   const setNewPassword = async password => {
-    const res = await supabase.auth.updateUser({ password });
+    const res = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
     if (!res.error) setRecovering(false);
     return res;
   };
 
   return (
-    <AuthContext.Provider value={{ session, recovering, signIn, signOut, sendReset, setNewPassword }}>
+    <AuthContext.Provider value={{ session, recovering, mustChangePassword, signIn, signOut, sendReset, setNewPassword }}>
       {children}
     </AuthContext.Provider>
   );
